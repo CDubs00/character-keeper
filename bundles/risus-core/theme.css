@@ -1,0 +1,210 @@
+/* ============================================================
+   Risus: The Anything RPG — theme
+   Scoped to .risus-sheet so it never leaks into the core app.
+   Palette + radius are variables so a future theme can override.
+   ============================================================ */
+
+.risus-sheet {
+  --risus-accent: #7b2d8e;        /* RISUS violet */
+  --risus-accent-soft: #f3e9f6;
+  --risus-ink: #1d1320;
+  --risus-line: #7b2d8e;
+  --risus-radius: 16px;
+  --risus-gap: 14px;
+
+  color: var(--risus-ink);
+  font-family: "Quicksand", "Nunito", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: var(--risus-gap);
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+/* ---- shared box look ---- */
+.risus-sheet .field,
+.risus-sheet .pool,
+.risus-sheet .cliche,
+.risus-sheet .textblock,
+.risus-sheet .risus-pools {
+  border: 2.5px solid var(--risus-line);
+  border-radius: var(--risus-radius);
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.risus-sheet label {
+  display: block;
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: var(--risus-accent);
+  margin-bottom: 3px;
+}
+
+.risus-sheet input,
+.risus-sheet textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--risus-ink);
+  outline: none;
+}
+.risus-sheet input:focus,
+.risus-sheet textarea:focus {
+  background: var(--risus-accent-soft);
+  border-radius: 6px;
+}
+
+/* ---- header ---- */
+.risus-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: var(--risus-gap);
+  flex-wrap: wrap;
+}
+.risus-brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.risus-logo {
+  font-size: 2.6rem;
+  font-weight: 800;
+  color: var(--risus-accent);
+  line-height: 1;
+}
+.risus-sub {
+  font-weight: 700;
+  color: var(--risus-accent);
+}
+.risus-pools {
+  display: flex;
+  gap: var(--risus-gap);
+}
+.risus-pools .pool {
+  min-width: 160px;
+}
+
+/* ---- identity ---- */
+.risus-identity {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--risus-gap);
+}
+.risus-identity .field-wide {
+  grid-column: 1 / -1;
+}
+.risus-sheet .campaign-tag {
+  display: inline-block;
+  font-weight: 600;
+  color: var(--risus-ink);
+}
+
+/* ---- cliché section ---- */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.section-head h2 {
+  margin: 0;
+  color: var(--risus-accent);
+  font-size: 1.3rem;
+}
+.cliche-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--risus-gap);
+  margin-top: 8px;
+}
+.cliche {
+  display: flex;
+  gap: var(--risus-gap);
+  align-items: stretch;
+}
+.cliche-main { flex: 1; }
+.cliche-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.primary-flag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  white-space: nowrap;
+  font-size: 0.7rem;
+}
+.primary-flag input { width: auto; }
+.cliche-name { font-weight: 700; font-size: 1.05rem; }
+.tools-label { margin: 0; }
+.cliche-tools { flex: 1; }
+
+.cliche-dice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dice-box {
+  width: 52px;
+  text-align: center;
+}
+.dice-box label {
+  font-size: 0.65rem;
+  margin: 0;
+}
+.dice-box input {
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 800;
+  border: 2px solid var(--risus-line);
+  border-radius: 10px;
+  padding: 4px 0;
+}
+
+/* ---- buttons ---- */
+.btn-add {
+  background: var(--risus-accent);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-add:hover { filter: brightness(1.1); }
+.btn-remove {
+  background: transparent;
+  border: 2px solid #c44;
+  color: #c44;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-weight: 700;
+  align-self: center;
+}
+.btn-remove:hover { background: #c44; color: #fff; }
+
+/* ---- inventory / notes ---- */
+.risus-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--risus-gap);
+}
+.risus-bottom textarea { resize: vertical; }
+
+/* ---- mobile ---- */
+@media (max-width: 640px) {
+  .risus-identity,
+  .risus-bottom { grid-template-columns: 1fr; }
+  .risus-header { flex-direction: column; }
+  .risus-pools { flex-direction: column; }
+  .cliche { flex-direction: column; }
+  .cliche-dice { justify-content: flex-start; }
+}

@@ -1,0 +1,9 @@
+{
+  "sheetId": "952d116c-203b-4f6c-b854-aa065b9eac65",
+  "name": "Advanced Dungeons & Dragons 2e",
+  "version": "1.0.0",
+  "author": "CDubs00",
+  "system": "adnd_2e",
+  "description": "Advanced Dungeons & Dragons, 2nd Edition. Styled after the classic seafoam-green TSR Player Character Record. Tab 1 reproduces the front page — the full ability table with its derived sub-stats (Hit/Dmg/Open Doors, System Shock, Spell Immunity, Max Henchmen…), the five saving-throw categories, the encumbrance/movement ladder, armour & Adjusted AC with the shield crest, Hit Points & Wounds, the wide Weapon Combat grid, Special Attacks/Abilities and the Proficiencies / Skills / Languages list. Tab 2 is page two — Gear (Item/Location/Wt), magical items & notes, Treasure (coins, gems, valuables, the XP have/need ledger), Supplies and Henchmen / Animal Companions. Background holds the portrait, the classic vitals block (Family, Homeland, Liege, Religion, Honor…), description and backstory. A session log lives on its own tab. ⓘ pop-overs carry 2e rules reminders throughout.",
+  "minAppVersion": "1.0.0"
+}

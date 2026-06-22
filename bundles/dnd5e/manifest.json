@@ -1,0 +1,9 @@
+{
+  "sheetId": "a6c71f07-6be2-4fca-91b0-74b10a14f853",
+  "name": "Dungeons & Dragons 5e",
+  "version": "2.0.0",
+  "author": "CDubs00",
+  "system": "dnd_5e",
+  "description": "Dungeons & Dragons 5th Edition (2014 rules). Single dense character page styled after the classic sheet — ability rail, saving throws & skills, a condensed combat block with shields/HP/death-saves/exhaustion, an octagon spell-slot rail, weapons over spells, and money above equipment. Background (with features, magic items & allies) and a session log live on their own tabs. ⓘ reference pop-overs throughout; auto-fitting combat values.",
+  "minAppVersion": "1.0.0"
+}

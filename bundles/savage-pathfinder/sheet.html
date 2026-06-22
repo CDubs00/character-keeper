@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><link rel="stylesheet" href="theme.css" /></head>
+<body>
+
+<div class="sp-sheet" data-tabs>
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       TAB 1 — CHARACTER SHEET
+       ════════════════════════════════════════════════════════════════════ -->
+  <div data-tab="Character">
+
+    <!-- Header band: name + identity -->
+    <div class="card sp-header">
+      <div class="sp-name-row">
+        <div class="sp-name"><div data-bind="info.name" data-type="readonly-name"></div></div>
+        <div class="sp-rank">
+          <label>Rank</label>
+          <select data-bind="info.rank">
+            <option>Novice</option>
+            <option>Seasoned</option>
+            <option>Veteran</option>
+            <option>Heroic</option>
+            <option>Legendary</option>
+          </select>
+        </div>
+      </div>
+      <div class="sp-info-grid">
+        <div class="f"><label>Ancestry</label><input type="text" data-bind="info.ancestry" placeholder="Human" /></div>
+        <div class="f"><label>Concept / Class</label><input type="text" data-bind="info.concept" placeholder="Dwarven Ranger" /></div>
+        <div class="f"><label>Alignment</label><input type="text" data-bind="info.alignment" placeholder="Neutral Good" /></div>
+        <div class="f"><label>Religion</label><input type="text" data-bind="info.religion" placeholder="The Green Faith" /></div>
+        <div class="f wide"><label>Languages</label><input type="text" data-bind="info.languages" placeholder="Common, Dwarven, Elvish" /></div>
+        <div class="f"><label>Player</label><input type="text" data-bind="info.player" placeholder="Player name" /></div>
+      </div>
+    </div>
+
+    <!-- Attributes | Derived | Status -->
+    <div class="sp-vitals">
+
+      <div class="card">
+        <div class="sec-title">Attributes</div>
+        <div class="attr-row"><span class="attr-name">Agility</span><div data-bind="attributes.agility" data-type="die"></div></div>
+        <div class="attr-row"><span class="attr-name">Smarts</span><div data-bind="attributes.smarts" data-type="die"></div></div>
+        <div class="attr-row"><span class="attr-name">Spirit</span><div data-bind="attributes.spirit" data-type="die"></div></div>
+        <div class="attr-row"><span class="attr-name">Strength</span><div data-bind="attributes.strength" data-type="die"></div></div>
+        <div class="attr-row"><span class="attr-name">Vigor</span><div data-bind="attributes.vigor" data-type="die"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="sec-title">Derived</div>
+        <div class="derived-row">
+          <div class="derived-stat"><div class="shield"><input type="number" data-bind="derived.pace" min="0" /></div><span>Pace</span></div>
+          <div class="derived-stat"><div class="shield"><input type="number" data-bind="derived.parry" min="0" /></div><span><label data-ref="Parry">Parry</label></span></div>
+          <div class="derived-stat"><div class="shield"><input type="number" data-bind="derived.toughness" min="0" /></div><span><label data-ref="Toughness">Toughness</label></span></div>
+          <div class="derived-stat"><div class="shield shield-sm"><input type="number" data-bind="derived.armor" min="0" /></div><span><label data-ref="Armor">(Armor)</label></span></div>
+        </div>
+        <div class="pp-row">
+          <div class="f"><label>Power Points</label><input type="number" data-bind="vitals.power_points" min="0" /></div>
+          <div class="f"><label>Max PP</label><input type="number" data-bind="vitals.max_power_points" min="0" /></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sec-title">Status</div>
+        <div class="status-row"><label data-ref="Bennies">Bennies</label><div data-bind="vitals.bennies" data-type="tracker" data-max="6"></div></div>
+        <div class="status-row"><label data-ref="Conviction">Conviction</label><div data-bind="vitals.conviction" data-type="tracker" data-max="1"></div></div>
+        <div class="status-row wounds"><label data-ref="Shaken">Shaken</label><div data-bind="vitals.shaken" data-type="tracker" data-max="1"></div></div>
+        <div class="status-row wounds"><label data-ref="Wounds">Wounds</label><div data-bind="vitals.wounds" data-type="tracker" data-max="3"></div></div>
+        <div class="status-row wounds"><label data-ref="Fatigue">Fatigue</label><div data-bind="vitals.fatigue" data-type="tracker" data-max="3"></div></div>
+      </div>
+
+    </div>
+
+    <!-- Skills | Edges + Hindrances -->
+    <div class="sp-mid">
+
+      <div class="card">
+        <div class="sec-head">
+          <div class="sec-title">Skills</div>
+          <button class="add-btn" data-action="add" data-target="skills">+ Add</button>
+        </div>
+        <div class="skill-head"><span>Die</span><span>Skill</span><span>Attribute</span><span></span></div>
+        <div class="lined" data-list="skills">
+          <div class="skill-row" data-item>
+            <div class="skill-die" data-bind="die" data-type="die"></div>
+            <input type="text" data-bind="name" placeholder="Skill" />
+            <select data-bind="attribute" class="attr-select">
+              <option>Agility</option>
+              <option>Smarts</option>
+              <option>Spirit</option>
+              <option>Strength</option>
+              <option>Vigor</option>
+            </select>
+            <span class="row-tools">
+              <button data-action="info" data-bind="description" data-ref-key="name"></button>
+              <button class="rm-btn" data-action="remove">✕</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sp-stack">
+        <div class="card">
+          <div class="sec-head">
+            <div class="sec-title">Edges</div>
+            <button class="add-btn" data-action="add" data-target="edges">+ Add</button>
+          </div>
+          <div class="lined" data-list="edges">
+            <div class="lined-row" data-item>
+              <input type="text" data-bind="name" placeholder="Edge" />
+              <span class="row-tools">
+                <button data-action="info" data-bind="description" data-ref-key="name"></button>
+                <button class="rm-btn" data-action="remove">✕</button>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="sec-head">
+            <div class="sec-title">Hindrances</div>
+            <button class="add-btn" data-action="add" data-target="hindrances">+ Add</button>
+          </div>
+          <div class="lined" data-list="hindrances">
+            <div class="lined-row" data-item>
+              <input type="text" data-bind="name" placeholder="Hindrance" />
+              <select data-bind="type" class="sev-select">
+                <option value="Minor">Minor</option>
+                <option value="Major">Major</option>
+              </select>
+              <span class="row-tools">
+                <button data-action="info" data-bind="description" data-ref-key="name"></button>
+                <button class="rm-btn" data-action="remove">✕</button>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="sec-head">
+            <div class="sec-title">Armor</div>
+            <button class="add-btn" data-action="add" data-target="armor">+ Add</button>
+          </div>
+          <table class="sheet-table">
+            <thead>
+              <tr><th>Name</th><th style="width:18%">Armor</th><th style="width:15%">WT</th><th class="tools-col"></th></tr>
+            </thead>
+            <tbody data-list="armor">
+              <tr data-item>
+                <td><input type="text" data-bind="name" placeholder="Studded Leather" /></td>
+                <td><input type="text" data-bind="armor" placeholder="+2" /></td>
+                <td><input type="text" data-bind="wt" /></td>
+                <td class="tools-col"><span class="row-tools">
+                  <button data-action="info" data-bind="description"></button>
+                  <button class="rm-btn" data-action="remove">✕</button>
+                </span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Weapons -->
+    <div class="card">
+      <div class="sec-head">
+        <div class="sec-title">Weapons</div>
+        <button class="add-btn" data-action="add" data-target="weapons">+ Add</button>
+      </div>
+      <table class="sheet-table">
+        <thead>
+          <tr>
+            <th style="width:20%">Weapon</th>
+            <th style="width:13%">Damage</th>
+            <th style="width:13%">Range</th>
+            <th style="width:7%">AP</th>
+            <th style="width:7%">RoF</th>
+            <th style="width:8%">WT</th>
+            <th>Notes</th>
+            <th class="tools-col"></th>
+          </tr>
+        </thead>
+        <tbody data-list="weapons">
+          <tr data-item>
+            <td><input type="text" data-bind="name" placeholder="Weapon" /></td>
+            <td><input type="text" data-bind="damage" placeholder="Str+d6" /></td>
+            <td><input type="text" data-bind="range" placeholder="—" /></td>
+            <td><input type="text" data-bind="ap" /></td>
+            <td><input type="text" data-bind="rof" /></td>
+            <td><input type="text" data-bind="wt" /></td>
+            <td><input type="text" class="cf-trunc" data-bind="notes" placeholder="Notes" /></td>
+            <td class="tools-col"><span class="row-tools">
+              <button data-action="info" data-bind="notes"></button>
+              <button class="rm-btn" data-action="remove">✕</button>
+            </span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Powers -->
+    <div class="card">
+      <div class="sec-head">
+        <div class="sec-title">Powers</div>
+        <button class="add-btn" data-action="add" data-target="powers">+ Add</button>
+      </div>
+      <table class="sheet-table">
+        <thead>
+          <tr>
+            <th style="width:20%">Power</th>
+            <th style="width:8%">PP</th>
+            <th style="width:15%">Range</th>
+            <th style="width:12%">Dur.</th>
+            <th>Effect</th>
+            <th class="tools-col"></th>
+          </tr>
+        </thead>
+        <tbody data-list="powers">
+          <tr data-item>
+            <td><input type="text" data-bind="name" placeholder="Power" /></td>
+            <td><input type="text" data-bind="pp" /></td>
+            <td><input type="text" data-bind="range" placeholder="Smarts x2" /></td>
+            <td><input type="text" data-bind="duration" placeholder="Instant" /></td>
+            <td><input type="text" class="cf-trunc" data-bind="effect" placeholder="Effect" /></td>
+            <td class="tools-col"><span class="row-tools">
+              <button data-action="info" data-bind="effect"></button>
+              <button class="rm-btn" data-action="remove">✕</button>
+            </span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Gear | Ancestry & Class Abilities -->
+    <div class="sp-mid">
+
+      <div class="card">
+        <div class="sec-head">
+          <div class="sec-title">Gear</div>
+          <button class="add-btn" data-action="add" data-target="gear">+ Add</button>
+        </div>
+        <table class="sheet-table">
+          <thead>
+            <tr><th>Item</th><th style="width:15%">WT</th><th class="tools-col"></th></tr>
+          </thead>
+          <tbody data-list="gear">
+            <tr data-item>
+              <td><input type="text" data-bind="name" placeholder="Item" /></td>
+              <td><input type="text" data-bind="wt" /></td>
+              <td class="tools-col"><span class="row-tools">
+                <button data-action="info" data-bind="description"></button>
+                <button class="rm-btn" data-action="remove">✕</button>
+              </span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="money-row">
+          <div class="coin"><label>CP</label><input type="number" data-bind="money.cp" min="0" /></div>
+          <div class="coin"><label>SP</label><input type="number" data-bind="money.sp" min="0" /></div>
+          <div class="coin"><label>EP</label><input type="number" data-bind="money.ep" min="0" /></div>
+          <div class="coin"><label>GP</label><input type="number" data-bind="money.gp" min="0" /></div>
+          <div class="coin"><label>PP</label><input type="number" data-bind="money.pp" min="0" /></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sec-head">
+          <div class="sec-title">Ancestry &amp; Class Abilities</div>
+          <button class="add-btn" data-action="add" data-target="abilities">+ Add</button>
+        </div>
+        <div class="lined abilities-list" data-list="abilities">
+          <div class="lined-row" data-item>
+            <input type="text" data-bind="name" placeholder="Darkvision" />
+            <span class="row-tools">
+              <button data-action="info" data-bind="description" data-ref-key="name"></button>
+              <button class="rm-btn" data-action="remove">✕</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Advancement -->
+    <div class="card">
+      <div class="sec-head">
+        <div class="sec-title">Advances</div>
+        <button class="add-btn" data-action="add" data-target="advances">+ Add Advance</button>
+      </div>
+      <div class="lined" data-list="advances">
+        <div class="lined-row" data-item>
+          <span data-bind="rank" data-type="rank-badge"></span>
+          <input type="text" data-bind="description" placeholder="Edge or advance taken" />
+          <span class="row-tools"><button class="rm-btn" data-action="remove">✕</button></span>
+        </div>
+      </div>
+      <div class="xp-wrap"><div data-bind="xp" data-type="xp-tracker" data-max="30"></div></div>
+    </div>
+
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       TAB 2 — BACKGROUND
+       ════════════════════════════════════════════════════════════════════ -->
+  <div data-tab="Background">
+
+    <div class="bg-grid">
+      <div class="card bg-portrait">
+        <div class="sec-title">Portrait</div>
+        <div data-type="portrait"></div>
+      </div>
+      <div class="card bg-text">
+        <div class="sec-title">Description</div>
+        <textarea data-bind="background.description" rows="6" placeholder="What do others see when they look at this character?"></textarea>
+        <div class="sec-title gap-top">Backstory</div>
+        <textarea data-bind="background.backstory" rows="16" placeholder="Where do they come from, and what set them on the road?"></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sec-head">
+        <div class="sec-title">Companions &amp; Recurring NPCs</div>
+        <button class="add-btn" data-action="add" data-target="companions">+ Add</button>
+      </div>
+      <table class="sheet-table">
+        <thead>
+          <tr><th style="width:35%">Name</th><th>Role</th><th class="tools-col"></th></tr>
+        </thead>
+        <tbody data-list="companions">
+          <tr data-item>
+            <td><input type="text" data-bind="name" placeholder="Name" /></td>
+            <td><input type="text" data-bind="role" placeholder="Loyal hound / shady fence / patron…" /></td>
+            <td class="tools-col"><span class="row-tools">
+              <button data-action="info" data-bind="description"></button>
+              <button class="rm-btn" data-action="remove">✕</button>
+            </span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       TAB 3 — SESSION LOG
+       ════════════════════════════════════════════════════════════════════ -->
+  <div data-tab="Sessions" data-export-skip>
+
+    <div class="sessions-head">
+      <div class="sec-title">Session Log</div>
+      <button class="add-btn add-session" data-action="add" data-target="sessions" data-insert="prepend">+ New Session</button>
+    </div>
+
+    <div data-list="sessions">
+      <div class="card session-card" data-item data-collapse-after="0">
+        <div data-collapsible="Session" data-collapsible-bind="date">
+          <div class="session-grid">
+            <div class="f date-f"><label>Date</label><input type="date" data-bind="date" /></div>
+            <div class="f span-all"><label>Session Notes</label><textarea data-bind="notes" rows="6" placeholder="What happened this session?"></textarea></div>
+            <div class="f"><label>To-Do</label><textarea data-bind="todos" rows="4" placeholder="Loose ends, promises, leads to chase…"></textarea></div>
+            <div class="f"><label>Loot</label><textarea data-bind="loot" rows="4" placeholder="Coin, items, who's carrying what…"></textarea></div>
+            <div class="f"><label>NPCs</label><textarea data-bind="npcs" rows="4" placeholder="Who did we meet? Friend or foe?"></textarea></div>
+            <div class="f"><label>Miscellaneous</label><textarea data-bind="misc" rows="4" placeholder="Anything else worth remembering."></textarea></div>
+          </div>
+          <div class="session-footer">
+            <button class="rm-btn session-rm" data-action="remove">✕ Delete Session</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><link rel="stylesheet" href="theme.css" /></head>
+<body>
+
+  <div class="risus-sheet">
+
+    <!-- ===== Header ===== -->
+    <header class="risus-header">
+      <div class="risus-brand">
+        <span class="risus-logo">RISUS</span>
+        <span class="risus-sub">The Anything RPG</span>
+      </div>
+
+      <div class="risus-pools">
+        <div class="pool">
+          <label>Lucky Shots</label>
+          <div data-bind="luckyShots" data-type="tracker" data-max="6"></div>
+        </div>
+        <div class="pool">
+          <label>Questing Dice</label>
+          <div data-bind="questingDice" data-type="tracker" data-max="15"></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===== Identity ===== -->
+    <section class="risus-identity">
+      <div class="field">
+        <label>Player Name</label>
+        <input type="text" data-bind="playerName" />
+      </div>
+      <div class="field">
+        <label>Character Name</label>
+        <div data-bind="info.name" data-type="readonly-name"></div>
+      </div>
+      <div class="field field-wide">
+        <label>Hook</label>
+        <input type="text" data-bind="hook" />
+      </div>
+    </section>
+
+    <!-- ===== Cliches ===== -->
+    <section class="risus-cliches">
+      <div class="section-head">
+        <h2>Cliches</h2>
+        <button class="btn-add" data-action="add" data-target="cliches">+ Add Cliche</button>
+      </div>
+
+      <div class="cliche-list" data-list="cliches">
+        <div class="cliche" data-item>
+          <div class="cliche-main">
+            <div class="cliche-row">
+              <select class="primary-flag" data-bind="primary">
+                <option value="yes">Primary</option>
+                <option value="no">&mdash;</option>
+              </select>
+              <input type="text" data-bind="name" class="cliche-name" placeholder="Cliche (e.g. Grizzled Ranger)" />
+            </div>
+            <div class="cliche-row">
+              <label class="tools-label">Tools of the Trade</label>
+              <input type="text" data-bind="tools" class="cliche-tools" placeholder="Bow, traps, knowledge of the wild..." />
+            </div>
+          </div>
+
+          <div class="cliche-dice">
+            <div class="dice-box">
+              <label>max</label>
+              <input type="number" data-bind="max" min="0" max="10" />
+            </div>
+            <div class="dice-box">
+              <label>current</label>
+              <input type="number" data-bind="current" min="0" max="10" />
+            </div>
+            <button class="btn-remove" data-action="remove" title="Remove">&#10005;</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Inventory / Notes ===== -->
+    <section class="risus-bottom">
+      <div class="textblock">
+        <label>Inventory</label>
+        <textarea data-bind="inventory" rows="10"></textarea>
+      </div>
+      <div class="textblock">
+        <label>Notes</label>
+        <textarea data-bind="notes" rows="10"></textarea>
+      </div>
+    </section>
+
+  </div>
+
+</body>
+</html>

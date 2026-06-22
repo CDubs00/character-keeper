@@ -1,0 +1,334 @@
+{
+  "emptyCharacter": {
+    "info": {
+      "name": "",
+      "ancestry": "",
+      "concept": "",
+      "alignment": "",
+      "religion": "",
+      "rank": "Novice",
+      "languages": "",
+      "player": ""
+    },
+    "attributes": {
+      "agility": {
+        "die": "d4",
+        "bonus": 0
+      },
+      "smarts": {
+        "die": "d4",
+        "bonus": 0
+      },
+      "spirit": {
+        "die": "d4",
+        "bonus": 0
+      },
+      "strength": {
+        "die": "d4",
+        "bonus": 0
+      },
+      "vigor": {
+        "die": "d4",
+        "bonus": 0
+      }
+    },
+    "derived": {
+      "pace": 6,
+      "parry": 2,
+      "toughness": 4,
+      "armor": 0
+    },
+    "vitals": {
+      "wounds": 0,
+      "shaken": 0,
+      "fatigue": 0,
+      "bennies": 3,
+      "conviction": 0,
+      "power_points": 0,
+      "max_power_points": 0
+    },
+    "skills": [
+      {
+        "name": "Athletics",
+        "attribute": "Agility",
+        "die": {
+          "die": "d4",
+          "bonus": 0
+        },
+        "description": ""
+      },
+      {
+        "name": "Common Knowledge",
+        "attribute": "Smarts",
+        "die": {
+          "die": "d4",
+          "bonus": 0
+        },
+        "description": ""
+      },
+      {
+        "name": "Notice",
+        "attribute": "Smarts",
+        "die": {
+          "die": "d4",
+          "bonus": 0
+        },
+        "description": ""
+      },
+      {
+        "name": "Persuasion",
+        "attribute": "Spirit",
+        "die": {
+          "die": "d4",
+          "bonus": 0
+        },
+        "description": ""
+      },
+      {
+        "name": "Stealth",
+        "attribute": "Agility",
+        "die": {
+          "die": "d4",
+          "bonus": 0
+        },
+        "description": ""
+      }
+    ],
+    "edges": [],
+    "hindrances": [],
+    "weapons": [],
+    "armor": [],
+    "gear": [],
+    "powers": [],
+    "abilities": [],
+    "money": {
+      "cp": 0,
+      "sp": 0,
+      "ep": 0,
+      "gp": 0,
+      "pp": 0
+    },
+    "advances": [],
+    "xp": 0,
+    "background": {
+      "description": "",
+      "backstory": ""
+    },
+    "companions": [],
+    "sessions": []
+  },
+  "dieValues": [
+    "d4",
+    "d6",
+    "d8",
+    "d10",
+    "d12"
+  ],
+  "dieMap": {
+    "d4": 4,
+    "d6": 6,
+    "d8": 8,
+    "d10": 10,
+    "d12": 12
+  },
+  "emptySkill": {
+    "name": "",
+    "attribute": "Agility",
+    "die": {
+      "die": "d4",
+      "bonus": 0
+    },
+    "description": ""
+  },
+  "emptyEdge": {
+    "name": "",
+    "description": ""
+  },
+  "emptyHindrance": {
+    "name": "",
+    "type": "Minor",
+    "description": ""
+  },
+  "emptyWeapon": {
+    "name": "",
+    "damage": "",
+    "range": "",
+    "ap": "",
+    "rof": "",
+    "wt": "",
+    "notes": ""
+  },
+  "emptyArmor": {
+    "name": "",
+    "armor": "",
+    "wt": "",
+    "description": ""
+  },
+  "emptyGear": {
+    "name": "",
+    "wt": "",
+    "description": ""
+  },
+  "emptyPower": {
+    "name": "",
+    "pp": "",
+    "range": "",
+    "duration": "",
+    "effect": ""
+  },
+  "emptyAbility": {
+    "name": "",
+    "description": ""
+  },
+  "emptyAdvance": {
+    "rank": "N",
+    "description": ""
+  },
+  "emptyCompanion": {
+    "name": "",
+    "role": "",
+    "description": ""
+  },
+  "emptySession": {
+    "date": "@today",
+    "notes": "",
+    "todos": "",
+    "loot": "",
+    "npcs": "",
+    "misc": ""
+  },
+  "sidecarPaths": ["sessions"],
+  "searchable": {
+    "info.concept":           "Concept",
+    "info.ancestry":          "Ancestry",
+    "info.religion":          "Religion",
+    "background.description":  "Description",
+    "background.backstory":   "Backstory",
+    "edges.name":             "Edge",
+    "edges.description":      "Edge",
+    "hindrances.name":        "Hindrance",
+    "hindrances.description": "Hindrance",
+    "weapons.name":           "Weapon",
+    "weapons.notes":          "Weapon",
+    "powers.name":            "Power",
+    "powers.effect":          "Power"
+  },
+  "dice": {
+  "available": ["d4","d6","d8","d10","d12"]
+  },
+  "rankAdvances": [
+    {
+      "rank": "N",
+      "label": "Novice 1"
+    },
+    {
+      "rank": "N",
+      "label": "Novice 2"
+    },
+    {
+      "rank": "N",
+      "label": "Novice 3"
+    },
+    {
+      "rank": "S",
+      "label": "Seasoned 1"
+    },
+    {
+      "rank": "S",
+      "label": "Seasoned 2"
+    },
+    {
+      "rank": "S",
+      "label": "Seasoned 3"
+    },
+    {
+      "rank": "S",
+      "label": "Seasoned 4"
+    },
+    {
+      "rank": "V",
+      "label": "Veteran 1"
+    },
+    {
+      "rank": "V",
+      "label": "Veteran 2"
+    },
+    {
+      "rank": "V",
+      "label": "Veteran 3"
+    },
+    {
+      "rank": "V",
+      "label": "Veteran 4"
+    },
+    {
+      "rank": "H",
+      "label": "Heroic 1"
+    },
+    {
+      "rank": "H",
+      "label": "Heroic 2"
+    },
+    {
+      "rank": "H",
+      "label": "Heroic 3"
+    },
+    {
+      "rank": "H",
+      "label": "Heroic 4"
+    },
+    {
+      "rank": "L",
+      "label": "Legendary 1"
+    },
+    {
+      "rank": "L",
+      "label": "Legendary 2"
+    },
+    {
+      "rank": "L",
+      "label": "Legendary 3"
+    },
+    {
+      "rank": "L",
+      "label": "Legendary 4"
+    }
+  ],
+  "reference": {
+    "Bennies": "Players start each game session with three Bennies. Bennies may be spent at almost anytime and don’t incur any sort of penalty. They may only be used for your own character.\n\tHere are the ways players can use Bennies: REROLL A TRAIT, RECOVER FROM SHAKEN, RECOVER POWER POINTS, SOAK ROLLS, DRAW A NEW ACTION CARD, REROLL DAMAGE, or INFLUENCE THE STORY. See pg.119 for more details",
+    "Conviction": "Conviction is a special award granted when a character experiences a great and meaningful victory; or a painful and catastrophic misfortune.\n\tConviction can be spent at anytime to add a d6 to all the character’s Trait and damage totals until the beginning of her next turn. This die can Ace, and its result is added to the final total. See pg.121 for more details",
+    "Fatigue": "Some hazards, stress, powers, or circumstances may cause Fatigue instead of damage. See pg.132",
+    "Wounds": "Every raise on the damage roll inflicts a Wound. Extras are Incapacitated if they take a single Wound. Theyre dead, injured, or otherwise out of the fight. Wild Cards can take three Wounds and still function (more with certain Edges or abilities). Further damage doesnt cause additional Wounds but Incapacitates them instead. See page 125",
+    "Shaken": "Shaken characters are nicked, bruised, or otherwise rattled. They may only take free actions, such as moving (including running). At the start of their turn, Shaken characters must attempt to recover from being Shaken by making a Spirit roll. This is a free action. See page 125",
+    "Parry": "Parry is equal to 2 plus half your characters Fighting die type (a total of 2 if a character doesnt have Fighting), plus any bonuses for shields or certain weapons. This is the Target Number (TN) to hit your hero in hand-to-hand combat.\n\tFor Fighting skills higher than d12, such as d12 + 1 , add half the fixed modifier, rounded down. For instance, Fighting d12 + 1 grants a Parry of 8, while Fighting d12 + 2 results in a Parry of 9.",
+    "Toughness": "Toughness is your heros damage threshold. Damage rolls that equal or exceed this number cause harm (explained pg.125).\n\tToughness is 2 plus half your heros Vigor, plus Armor (use the armor worn on his torso, see pg.108). Vigor over a d12 is calculated just like Parry, above.",
+    "Armor": "This is the amount of Armor provided by equipment, Unless an attacker states otherwise, hits are always directed at the victims torso.\n\tWorn armor doesnt stack with other worn armor, but does stack with natural armor (such as scaly skin) at its full value.",
+
+    "Academics": "Academics reflects knowledge of the arts, history, archaeology, religion, and similar fields, or the ability to find that information. If an explorer wants to research when the Imperial Calendar began or cite a line from Azvadeva Pujila, or use his linguistic expertise to decipher a dead language, this is the skill to have.",
+    "Alchemy": "Alchemy is a new arcane skill for the Alchemist Class Edge (see pg.38 of the Advanced Players Guide).",
+    "Athletics": "Athletics combines an individual’s coordination with learned skills such as climbing, jumping, balancing, wrestling, swimming, throwing, or catching. Characters who rely on physical power more than coordination can take the Brute Edge (pg.41) to link this skill to Strength instead of Agility.",
+    "Battle": "Battle is an individual’s command of strategy and tactics. It can be used for general military knowledge and is critical when commanding troops in Mass Battles (see pg.158).",
+    "Boating": "Characters with this skill can handle most any common waterborne boat or ship. They also know how to handle common tasks associated with their vessel such as tying knots, rigging sails, or following currents.",
+    "Common Knowledge": "Characters roll Common Knowledge to know people, places, and things of their locale, including etiquette, geography, culture, current events, contacts, and customs.",
+    "Driving": "Although rare on Golarion, Driving allows a hero to control any powered ground vehicle. Self-powered transports use Athletics, while beast-drawn conveyances use Riding.\n\tDriving rolls are typically only needed in dangerous or stressful conditions, such as chases or when navigating dangerous roads or attempting to race through crowded city streets.",
+    "Faith": "Clerics and druids use Faith as the arcane skill required for their Arcane Backgrounds, described on pgs.48 and 52.",
+    "Fighting": "Fighting covers all hand-to-hand (melee) attacks, whether it’s with fists, axes, swords, or martial arts. It reflects skill as well as raw power, savagery, and fearlessness.",
+    "Gambling": "Gambling is common in taverns, roadside inns, the barracks of most armies, or below decks of ships at sea. See pg.34 for more details",
+    "Healing":"Healing has multiple uses, from treating Wounds to diagnosing diseases and analyzing certain kinds of forensic evidence.\n\tSee pg.34 for more about this skill, see pg.128 for rules on mending and treating Wounds, and pg.152 and 155 for treatment of disease or poison.",
+    "Intimidation": "Intimidation is the art of frightening an opponent so that he backs down, reveals information, or flees.\n\tIntimidation is an opposed roll resisted by the opponent’s Spirit. In combat, this is a Test (see pg.140). Out of combat, a successful roll means the foe backs down for the most part, reveals some information, or slinks away when the opportunity presents itself. See pg. 34 for more details. For Animal Handling see pg.35 of the Advanced Players Guide.",
+    "Notice": "Notice is a hero’s general awareness and alertness. It’s used to sense sights, sounds, tastes, and smells, spot clues, detect ambushes, spot hidden weapons on a foe, or tell if a rival is lying, frightened, happy, etc.\n\tSuccess conveys basic information—the character hears movement in the forest, smells distant smoke, or senses someone isn’t being completely truthful.\n\tA raise grants more detail, such as the direction of a sound or odor or what topic a person is avoiding or lying about.",
+    "Occult": "Occult reflects knowledge and experience of magical and supernatural events, processes, items, and creatures.\n\tIt can be used to decipher glyphs, recall information about Golarion's monsters, recall cures for supernatural maladies like lycanthropy or vampirism, and so on. See pg.35 for more information",
+    "Performance": "A good entertainer can lift spirits, rally a crowd to action, or simply earn a few coins from the locals. Specifics depend on the situation, setting, and how well the character is known in the area.\n\tPerformance covers singing, acting, playing an instrument, or similar tasks that require an audience to appreciate. It is also the arcane skill used by bards. See pg.35 about Raising Funds or pg.36 about Deception.",
+    "Persuasion": "Persuasion is the ability to convince others to do what you want through reason, cajoling, deception, rewards, or other friendly means.\n\tPersuasion isn’t mind control. It can change someone’s attitude but not their goals. A bandit may let you keep a sentimental piece of jewelry with a good Persuasion roll but still takes all your other goods. See pg.36 for more details and about Reactions and for Animal Handling see pg.35 of the Advanced Players Guide",
+    "Piloting": "Although rare on Golarion, Piloting allows a character to maneuver any kind of airship.\n\tA being with the innate ability to fly (having wings, for example) uses Athletics instead.",
+    "Repair": "Repair is the ability to take apart and/or fix mechanical gadgets, vehicles, weapons, and other simple devices. It also covers the use of demolitions and explosives. See pg.39 for information about Tools.",
+    "Riding": "Riding allows a hero to mount, control, and ride any beast or beast-drawn vehicle. This includes horses, camels, dragons, wagons, chariots, and the like. See the rules for Mounted Combat on pg.135.",
+    "Science": "Those with this skill have studied various disciplines from architecture to natural sciences to engineering and other “hard” sciences.\n\tA successful roll reveals basic information about a topic, and a raise grants more details.",
+    "Shooting": "Shooting covers all attempts to hit a target with a ranged weapon such as a bow or crossbow (thrown weapons use Athletics, pg.33). See pg.124 details on ranged attacks.",
+    "Spellcasting": "Sorcerers and wizards use Spellcasting as their arcane skill when casting spells. See pg.167 for more information on magical powers.",
+    "Stealth": "Stealth is the ability to hide and move quietly. A simple success on a Stealth roll means the character avoids detection if enemies aren’t particularly alert. If the character fails the roll, the enemy realizes something is amiss and begins actively searching for whatever roused them.\n\tOnce foes are alerted and active, Stealth is opposed by Notice (a group roll if there are many foes, see page 119). See pg.37 for more details",
+    "Survival": "Survival allows a character to find food, water, or shelter in hostile environments. It can also be used to navigate wilderness environments, figure out which plants are good to eat and which aren’t, and so on.\n\tA successful Survival roll provides enough food and water for one person for one day; or five people with a raise. (For details on Hunger and Thirst see pg.155.)\n\tSurvival can also be used to detect and follow tracks. See pg.39 for more details",
+    "Taunt": "Taunt attacks a person’s pride through ridicule, cruel jests, or oneupmanship. Taunt is an opposed roll resisted by the opponent’s Smarts. In combat, this is a Test (see page 140). Out of combat, success means the defender backs down, slinks away, or starts a fight. See pg. 39 for more details",
+    "Thievery": "Lockpicking, safecracking, picking pockets, sleight of hand, setting and disabling traps, and similar acts of misdirection, sabotage, subterfuge, and manipulation are called Thievery. See pg.39 for more details"
+  }
+}

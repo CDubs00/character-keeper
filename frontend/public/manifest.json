@@ -1,0 +1,30 @@
+{
+  "name": "Character Keeper",
+  "short_name": "Keeper",
+  "description": "Self-hosted TTRPG character sheet web app.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#101822",
+  "theme_color": "#101822",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ]
+}

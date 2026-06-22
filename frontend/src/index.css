@@ -1,0 +1,606 @@
+@font-face { font-family:'Cinzel'; font-style:normal; font-weight:400; font-display:swap; src:url('./fonts/cinzel-v26-latin-regular.woff2') format('woff2'); }
+@font-face { font-family:'Cinzel'; font-style:normal; font-weight:600; font-display:swap; src:url('./fonts/cinzel-v26-latin-600.woff2') format('woff2'); }
+@font-face { font-family:'Cinzel'; font-style:normal; font-weight:700; font-display:swap; src:url('./fonts/cinzel-v26-latin-700.woff2') format('woff2'); }
+
+@font-face { font-family:'Crimson Pro'; font-style:normal; font-weight:300; font-display:swap; src:url('./fonts/crimson-pro-v28-latin-300.woff2') format('woff2'); }
+@font-face { font-family:'Crimson Pro'; font-style:normal; font-weight:400; font-display:swap; src:url('./fonts/crimson-pro-v28-latin-regular.woff2') format('woff2'); }
+@font-face { font-family:'Crimson Pro'; font-style:normal; font-weight:600; font-display:swap; src:url('./fonts/crimson-pro-v28-latin-600.woff2') format('woff2'); }
+@font-face { font-family:'Crimson Pro'; font-style:italic; font-weight:400; font-display:swap; src:url('./fonts/crimson-pro-v28-latin-italic.woff2') format('woff2'); }
+
+@font-face { font-family:'Share Tech Mono'; font-style:normal; font-weight:400; font-display:swap; src:url('./fonts/share-tech-mono-v16-latin-regular.woff2') format('woff2'); }
+
+:root {
+  --bg-deep:      #0e0d0b;
+  --bg-surface:   #161410;
+  --bg-raised:    #1e1b16;
+  --bg-input:     #252119;
+  --border:       #3a3428;
+  --border-bright:#5a5040;
+  --accent:       #c8922a;
+  --accent-dim:   #8a6018;
+  --accent-glow:  rgba(200,146,42,0.15);
+  --red:          #c84040;
+  --red-dim:      #7a2020;
+  --green:        #5a8a50;
+  --text-primary: #e8e0cc;
+  --text-secondary:#a09070;
+  --text-dim:     #6a5e48;
+  --text-accent:  #d4a84a;
+  --font-display: 'Cinzel', serif;
+  --font-body:    'Crimson Pro', serif;
+  --font-mono:    'Share Tech Mono', monospace;
+  --radius:       2px;
+  --section-gap:  1.5rem;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 17px; }
+
+body {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
+  min-height: 100vh;
+  /* subtle noise texture */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+
+/* Typography */
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: 0.05em; }
+
+/* Form elements */
+input, select, textarea {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.5rem;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23a09070'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  padding-right: 1.5rem;
+  cursor: pointer;
+}
+
+textarea { resize: vertical; min-height: 80px; }
+
+button {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.4rem 0.9rem;
+  transition: all 0.15s;
+}
+
+button.btn-primary {
+  background: var(--accent);
+  color: #0e0d0b;
+  font-weight: 700;
+}
+button.btn-primary:hover { background: #d4a030; box-shadow: 0 0 12px var(--accent-glow); }
+
+button.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+button.btn-ghost:hover { border-color: var(--border-bright); color: var(--text-primary); }
+
+button.btn-danger {
+  background: transparent;
+  color: var(--red-dim);
+  border: 1px solid var(--red-dim);
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+}
+button.btn-danger:hover { background: var(--red-dim); color: var(--text-primary); }
+
+label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+/* Section card */
+.sheet-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem 1.25rem;
+  position: relative;
+}
+
+.section-header {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-accent);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-header::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 0.75rem;
+  background: var(--accent);
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Field grid helpers */
+.field-row { display: flex; gap: 0.75rem; align-items: flex-end; }
+.field-row > * { flex: 1; }
+.field-group { margin-bottom: 0.75rem; }
+
+/* Derived stat chip */
+.derived-chip {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  text-align: center;
+}
+.derived-chip .value {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  color: var(--text-accent);
+  line-height: 1;
+}
+.derived-chip label { margin-bottom: 0.3rem; }
+
+/* Die selector */
+.die-selector {
+  display: flex;
+  gap: 0.25rem;
+}
+.die-btn {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.3rem 0.1rem;
+  text-align: center;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: all 0.1s;
+}
+.die-btn:hover { border-color: var(--border-bright); color: var(--text-secondary); }
+.die-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text-accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+/* Tracker dots */
+.tracker {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.tracker-dot {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--border-bright);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.1s;
+  position: relative;
+}
+.tracker-dot.filled { background: var(--accent); border-color: var(--accent); }
+.tracker-dot.filled.red-dot { background: var(--red); border-color: var(--red); }
+.tracker-dot:hover { transform: scale(1.15); }
+
+/* Skill row */
+.skill-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 90px 24px;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(58,52,40,0.5);
+}
+.skill-row:last-child { border-bottom: none; }
+.skill-attr-badge {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Dynamic list item */
+.dynamic-item {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  position: relative;
+}
+
+/* Character list */
+.char-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  flex-wrap: wrap;              /* let the date/share/menu cluster drop below */
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem 1rem;            /* row-gap when wrapped, column-gap when inline */
+}
+.char-card > :first-child {    /* name + system/owner block */
+  flex: 1 1 12rem;            /* ~12rem preferred → forces the cluster to wrap on phones */
+  min-width: 0;              /* lets long system names shrink instead of overflowing */
+}
+.char-card > :last-child {     /* ⬡ SHARED · date · ⋯ */
+  flex: 0 0 auto;
+}
+.char-card:hover { border-color: var(--accent-dim); background: var(--bg-raised); }
+.char-card .char-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.char-card .char-meta {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--accent-dim);
+  color: var(--text-accent);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius);
+  z-index: 1000;
+  animation: fadeInUp 0.2s ease, fadeOut 0.3s ease 1.7s forwards;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeOut {
+  to { opacity: 0; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SHEET RESPONSIVE FOUNDATION  (app-provided defaults)
+   ──────────────────────────────────────────────────────────────────────────
+   Shipped at :where() zero specificity, so a bundle's theme.css ALWAYS wins
+   when an author chooses to override. Authors get mobile for free by using
+   the helper classes below; they are never required to.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The renderer wraps every sheet in .sheet-root. Make it the container-query
+   context so sheet layout responds to its OWN width, not the viewport — that
+   means it behaves identically on the roster, the full page, a share link,
+   and a phone. (No :where() here: this is structural, not an overridable look.) */
+.sheet-root {
+  container-type: inline-size;
+  container-name: sheet;
+}
+
+/* Opt-in responsive columns. Put class="cf-cols" on a container and its
+   children flow into as many columns as fit, collapsing to one on narrow
+   screens — no breakpoints needed. The min(260px,100%) floor stops a single
+   column from overflowing on very small phones. */
+:where(.cf-cols) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: var(--section-gap, 1.5rem);
+  align-items: start;
+}
+
+/* Table scroll wrapper — the renderer wraps every <table> in this so wide
+   tables scroll horizontally instead of blowing out the layout on mobile. */
+:where(.cf-table-scroll) {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Collapsible sections (opt-in via data-collapsible on an element). The
+   renderer injects a header button + a body region; these are the default
+   open/closed styles. Authors restyle freely via theme.css. */
+:where(.cf-collapsible) > .cf-collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  cursor: pointer;
+  background: none;
+  border: none;
+  text-align: left;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  padding: 0;
+}
+:where(.cf-collapsible-header) .cf-collapsible-caret {
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+  font-size: 0.7em;
+}
+:where(.cf-collapsible[data-open="false"]) .cf-collapsible-caret {
+  transform: rotate(-90deg);
+}
+:where(.cf-collapsible[data-open="false"]) > .cf-collapsible-body {
+  display: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RENDERER WIDGETS — append this block to frontend/src/index.css
+   ──────────────────────────────────────────────────────────────────────────
+   Tabs / info popover / add-item dialog defaults. Tab styles ship at
+   :where() zero specificity so bundle themes always win. The popover and
+   dialog are PORTALED to <body> (outside .sheet-root), so they're styled
+   here as app chrome with app variables — bundles can still restyle them
+   with plain .cf-info-pop / .cf-dialog selectors if they want.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Tabs ── */
+:where(.cf-tab-bar) {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+:where(.cf-tab-btn) {
+  padding: 0.5rem 1.1rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+:where(.cf-tab-btn:hover) { color: var(--text-secondary); }
+:where(.cf-tab-btn.active) {
+  color: var(--text-accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Info button (the ⓘ) ── */
+.cf-info-wrap { display: inline-flex; vertical-align: middle; }
+:where(.cf-info-btn) {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 0.85em;
+  line-height: 1;
+  color: var(--text-dim);
+  opacity: 0.4;
+}
+:where(.cf-info-btn:hover) { opacity: 0.8; }
+:where(.cf-info-btn.has-content) { opacity: 1; color: var(--accent); }
+
+/* ── Info popover (portaled to body) ── */
+.cf-info-pop {
+  position: fixed;
+  z-index: 1200;
+  overflow-y: auto;
+  background: var(--bg-raised, #262220);
+  border: 1px solid var(--border-bright, #6b6155);
+  border-radius: 4px;
+  padding: 0.7rem 0.8rem;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-primary, #e8e2d6);
+}
+.cf-info-title {
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+  color: var(--text-accent, #c9a227);
+}
+.cf-info-ref {
+  border-left: 3px solid var(--accent, #c9a227);
+  padding: 0.3rem 0.55rem;
+  margin-bottom: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  white-space: pre-wrap;
+}
+.cf-info-ref-label {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-dim, #999);
+  margin-bottom: 0.2rem;
+}
+.cf-info-text { word-break: break-word; }
+.cf-info-edit {
+  width: 100%;
+  resize: vertical;
+  background: var(--bg-input, #1a1714);
+  color: var(--text-primary, #e8e2d6);
+  border: 1px solid var(--border, #4a4338);
+  border-radius: 3px;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.cf-info-edit:focus { outline: none; border-color: var(--accent, #c9a227); }
+
+.cf-info-modebar { display: flex; gap: 0.25rem; margin-bottom: 0.4rem; }
+.cf-info-mode {
+  font-family: var(--font-mono);
+  font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 0.15rem 0.5rem; border-radius: 2px; cursor: pointer;
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.cf-info-mode.active { color: var(--text-accent); border-color: var(--accent); }
+.cf-info-text-edit { cursor: text; }
+
+/* ── Add-item dialog (portaled to body) ── */
+.cf-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.cf-dialog {
+  width: min(440px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--bg-surface, #211d1a);
+  border: 1px solid var(--border-bright, #6b6155);
+  border-radius: 6px;
+  padding: 1.1rem 1.2rem;
+}
+.cf-dialog-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-accent, #c9a227);
+  margin-bottom: 0.9rem;
+}
+.cf-dialog-field { margin-bottom: 0.75rem; }
+.cf-dialog-field label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-dim, #999);
+  margin-bottom: 0.25rem;
+}
+.cf-dialog-field input,
+.cf-dialog-field select,
+.cf-dialog-field textarea {
+  width: 100%;
+  background: var(--bg-input, #1a1714);
+  color: var(--text-primary, #e8e2d6);
+  border: 1px solid var(--border, #4a4338);
+  border-radius: 3px;
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  font-size: 0.9rem;
+}
+.cf-dialog-field input:focus,
+.cf-dialog-field select:focus,
+.cf-dialog-field textarea:focus { outline: none; border-color: var(--accent, #c9a227); }
+.cf-dialog-field textarea { resize: vertical; }
+/* DieSelector inside the dialog lives outside .sheet-root, so the renderer's
+   'selected' class needs a home here (app index.css styles use .active) */
+.cf-dialog .die-selector { display: flex; gap: 0.25rem; }
+.cf-dialog .die-btn.selected {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text-accent);
+}
+.cf-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.cf-dialog-actions button {
+  padding: 0.45rem 1.1rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.cf-dialog-cancel {
+  background: none;
+  border: 1px solid var(--border, #4a4338);
+  color: var(--text-secondary, #ccc);
+}
+.cf-dialog-confirm {
+  background: var(--accent, #c9a227);
+  border: 1px solid var(--accent, #c9a227);
+  color: #141210;
+  font-weight: 600;
+}
+.cf-dialog-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Input truncation helper — ellipsis shows while the input is unfocused */
+:where(input.cf-trunc) { text-overflow: ellipsis; }
+
+/* Static export rendering (image / PDF capture) */
+.sheet-root .cf-export-text   { word-break: break-word; min-height: 1.2em; padding: 4px 0; }
+.sheet-root .cf-export-tab-title { margin: 18px 0 8px; }
+
+/* Rendered-markdown blocks inside read-only description displays
+   (info popover + export). The host classes drop white-space: pre-wrap
+   above because the renderer now emits real <p>/<br>/<ul>/<ol>. */
+.cf-info-text .cf-md-p,
+.sheet-root .cf-export-text .cf-md-p { margin: 0 0 0.5em; }
+.cf-info-text .cf-md-p:last-child,
+.sheet-root .cf-export-text .cf-md-p:last-child { margin-bottom: 0; }
+.cf-info-text .cf-md-list,
+.sheet-root .cf-export-text .cf-md-list { margin: 0 0 0.5em; padding-left: 1.25em; }
+.cf-info-text .cf-md-list:last-child,
+.sheet-root .cf-export-text .cf-md-list:last-child { margin-bottom: 0; }
+.cf-info-text .cf-md-list li,
+.sheet-root .cf-export-text .cf-md-list li { margin: 0.15em 0; }

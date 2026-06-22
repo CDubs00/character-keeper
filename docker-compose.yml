@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  character-keeper:
+    build: .
+    container_name: character-keeper
+    restart: unless-stopped
+    ports:
+      - "3210:3000"
+    volumes:
+      - ./data:/data
+      - ./bundles:/bundles
+    environment:
+      - PORT=3000
+      - DATA_DIR=/data
+      - BUNDLES_DIR=/bundles
+      - NODE_ENV=development
+      - SESSION_SECRET=${SESSION_SECRET}
+    labels:
+      - "net.unraid.docker.managed=dockerman"
+      - "net.unraid.docker.webui=http://[IP]:[PORT:3000]"
+      - "net.unraid.docker.icon=https://raw.githubusercontent.com/nicholaswilde/docker-template/main/templates/favicon.png"

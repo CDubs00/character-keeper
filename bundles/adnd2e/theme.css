@@ -1,0 +1,778 @@
+/* ============================================================
+   ADVANCED DUNGEONS & DRAGONS 2e — theme.css
+   Classic seafoam-green TSR Player Character Record: mint field,
+   white cells, deep-green ink and rules, a shield AC crest.
+   All rules scoped to .sheet-root so app chrome is untouched.
+   Responsive via container queries (the app sets .sheet-root as
+   the @container "sheet"), so roster previews, share links, and
+   phones all reflow.
+   ============================================================ */
+
+/* ── Tokens ───────────────────────────────────────────────── */
+.sheet-root {
+  --field:       #5cc2a0;   /* the classic seafoam page */
+  --field-deep:  #49ab8b;
+  --panel:       #ffffff;   /* white field cells */
+  --panel-soft:  #eef9f4;   /* faint green tint for alt rows */
+  --line:        #2f9476;   /* medium green rules */
+  --line-soft:   #a9dcc9;   /* hairline between rows */
+  --ink:         #103027;   /* near-black green ink */
+  --ink-soft:    #2c6a57;
+  --ink-faint:   #4f8f7b;
+  --green:       #0f5c47;   /* deep green for titles */
+  --green-bright:#15795d;
+  --crest:       #0c3b2e;   /* darkest green for the logo plate */
+
+  --f-display: 'Cinzel', 'Georgia', serif;
+  --f-body:    'EB Garamond', 'Crimson Pro', 'Georgia', serif;
+
+  font-family: var(--f-body);
+  font-size:   15px;
+  line-height: 1.3;
+  color:       var(--ink);
+  background:
+    radial-gradient(ellipse at top, rgba(255,255,255,0.18), transparent 60%),
+    var(--field);
+  padding:   12px;
+  max-width: 1200px;
+  margin:    0 auto;
+}
+
+/* ── Reset globals that leak in from index.css ────────────── */
+.sheet-root *,
+.sheet-root *::before,
+.sheet-root *::after { box-sizing: border-box; }
+
+.sheet-root h1, .sheet-root h2, .sheet-root h3 {
+  font-family: var(--f-display);
+  color: inherit; margin: 0; padding: 0;
+}
+
+.sheet-root label {
+  font-family: var(--f-display);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: block;
+  margin-bottom: 1px;
+}
+
+.sheet-root input,
+.sheet-root select,
+.sheet-root textarea {
+  font-family: var(--f-body);
+  font-size: 14px;
+  background: var(--panel);
+  border: none;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  color: var(--ink);
+  padding: 2px 4px;
+  width: 100%;
+  outline: none;
+  box-shadow: none;
+  transition: border-color 0.15s, background 0.15s;
+  -webkit-appearance: none;
+}
+.sheet-root input:focus,
+.sheet-root select:focus,
+.sheet-root textarea:focus {
+  border-bottom-color: var(--green);
+  background: #f0fbf6;
+}
+.sheet-root textarea {
+  border: 1px solid var(--line-soft);
+  background: var(--panel);
+  padding: 5px 7px;
+  resize: vertical;
+  line-height: 1.4;
+}
+.sheet-root input[type="number"] { -moz-appearance: textfield; }
+.sheet-root input[type="number"]::-webkit-outer-spin-button,
+.sheet-root input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sheet-root select { cursor: pointer; background-image: none; padding-right: 3px; }
+.sheet-root input.cf-trunc { text-overflow: ellipsis; }
+
+.sheet-root button {
+  font-family: var(--f-display);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border: none;
+  border-radius: 2px;
+  padding: 2px 8px;
+  background: none;
+  color: var(--ink-soft);
+  transition: all 0.12s;
+}
+
+/* ── Cards & section titles ──────────────────────────────── */
+.sheet-root .card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--green);
+  border-radius: 3px;
+  padding: 9px 11px;
+  box-shadow: 0 1px 3px rgba(12,59,46,0.16);
+}
+
+.sheet-root .sec-title {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--green);
+  margin-bottom: 6px;
+}
+.sheet-root .sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 6px;
+  padding-bottom: 3px;
+}
+.sheet-root .sec-head .sec-title { margin-bottom: 0; }
+
+.sheet-root .add-btn {
+  color: var(--green);
+  font-weight: 600;
+  border: 1px solid var(--green);
+  border-radius: 2px;
+  padding: 1px 9px;
+  background: rgba(15,92,71,0.06);
+  white-space: nowrap;
+}
+.sheet-root .add-btn:hover { background: var(--green); color: #fff; }
+
+.sheet-root .rm-btn { color: var(--ink-faint); padding: 0 4px; font-size: 11px; background: transparent; }
+.sheet-root .rm-btn:hover { color: #9a2b1f; }
+
+.sheet-root .row-tools { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.sheet-root .cf-info-btn { font-size: 13px; padding: 0 3px; color: var(--ink-faint); opacity: 0.55; background: transparent; }
+.sheet-root .cf-info-btn.has-content { color: var(--green-bright); opacity: 1; }
+
+.sheet-root .gap-top { margin-top: 12px; }
+.sheet-root .f { min-width: 0; }
+
+/* The reusable double-ruled "frame" look (value boxes, ability score) */
+.sheet-root .frame {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px var(--line-soft);
+}
+
+/* ── Tabs ────────────────────────────────────────────────── */
+.sheet-root .cf-tab-bar {
+  border-bottom: 3px solid var(--green);
+  margin-bottom: 12px;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.sheet-root .cf-tab-btn {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--green);
+  background: rgba(255,255,255,0.55);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  padding: 7px 18px;
+}
+.sheet-root .cf-tab-btn:hover { color: var(--crest); background: rgba(255,255,255,0.8); }
+.sheet-root .cf-tab-btn.active {
+  color: #fff;
+  background: var(--green);
+  border-color: var(--crest);
+}
+
+/* ── Collapsible (sessions) ──────────────────────────────── */
+.sheet-root .cf-collapsible-header {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--green);
+  padding: 2px 0;
+  background: transparent;
+}
+.sheet-root .cf-collapsible[data-open="true"] > .cf-collapsible-header {
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 10px;
+  padding-bottom: 5px;
+}
+
+/* ── Trackers & toggles ──────────────────────────────────── */
+.sheet-root .tracker { display: flex; gap: 4px; flex-wrap: wrap; }
+.sheet-root .tracker-bubble {
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  border: 2px solid var(--green);
+  background: var(--panel);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.sheet-root .tracker-bubble:hover { transform: scale(1.12); }
+.sheet-root .tracker-bubble.filled { background: var(--green-bright); border-color: var(--green); }
+
+.sheet-root .conviction-bubble {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--green);
+  background: var(--panel);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.1s;
+}
+.sheet-root .conviction-bubble:hover { transform: scale(1.12); }
+.sheet-root .conviction-bubble.filled { background: var(--green); }
+
+/* ── Info popover (matches app, green-tinted) ────────────── */
+.sheet-root .cf-info-wrap { display: inline-flex; }
+
+/* ════════════════════════════════════════════════════════════
+   HEADER BAND — identity left, logo crest upper-right
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .adnd-header {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  align-items: stretch;
+}
+.sheet-root .identity-card { flex: 1; display: flex; flex-direction: column; }
+.sheet-root .name-field {
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+}
+.sheet-root .name-field [data-type] {
+  font-size: 24px;
+  font-family: var(--f-display);
+  color: var(--ink);
+  border-bottom: none;
+}
+.sheet-root .identity-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px 14px;
+  align-content: center;
+}
+
+/* Logo crest — dark-green plate so a transparent PNG logo reads cleanly. */
+.sheet-root .crest-card {
+  flex: 0 0 220px;
+  background: var(--crest);
+  border: 1px solid var(--crest);
+  border-top: 3px solid var(--green-bright);
+  border-radius: 3px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 1px 3px rgba(12,59,46,0.25);
+}
+.sheet-root .adnd-logo {
+  display: block;
+  max-width: 100%;
+  max-height: 90px;
+  height: auto;
+  object-fit: contain;
+}
+.sheet-root .crest-tag {
+  font-family: var(--f-display);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #cdeee2;
+  text-align: center;
+}
+
+/* ════════════════════════════════════════════════════════════
+   BANDS — flex rows of cards that stack on narrow widths
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .band { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+.sheet-root .band > .card { flex: 1; min-width: 0; margin-bottom: 0; }
+.sheet-root .abilities { margin-bottom: 10px; }
+.sheet-root .weapons,
+.sheet-root .gear,
+.sheet-root .henchmen,
+.sheet-root .money,
+.sheet-root .relations { margin-bottom: 10px; }
+
+/* Band weighting where two cards shouldn't be 50/50 */
+.sheet-root .band-3 .armor { flex: 1.35; }
+.sheet-root .band-special .spec-attacks { flex: 1.4; }
+.sheet-root .band-treasure .gems { flex: 1.1; }
+
+/* Top band — classic three-up: Abilities (wide) · Movement (narrow) · Saves.
+   Equal-height cards (like the printed sheet's three boxes); movement and
+   saves let their rows grow to fill so there's no ragged green gap. */
+.sheet-root .band-top { align-items: stretch; }
+.sheet-root .band-top .abilities { flex: 3.1; }
+.sheet-root .band-top .movement  { flex: 0.9;  display: flex; flex-direction: column; }
+.sheet-root .band-top .saves     { flex: 1.4;  display: flex; flex-direction: column; }
+.sheet-root .band-top .movement .mv-list { flex: 1; }
+.sheet-root .band-top .movement .mv-line { flex: 1; }
+.sheet-root .band-top .saves .save-row { flex: 1; }
+
+/* ════════════════════════════════════════════════════════════
+   ABILITIES — score block + derived sub-stat grid (the showpiece)
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .abil-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sheet-root .abil-row:last-child { border-bottom: none; }
+
+.sheet-root .abil-id {
+  flex: 0 0 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px var(--line-soft);
+  padding: 3px 2px;
+}
+.sheet-root .abil-abbr {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--green);
+}
+.sheet-root .abil-score {
+  width: 100%;
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 18px;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.sheet-root .abil-derived {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px 7px;
+  align-content: center;
+}
+.sheet-root .abil-derived .dv { min-width: 0; }
+.sheet-root .abil-derived .dv label {
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sheet-root .abil-derived .dv input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 13px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--panel);
+  padding: 2px 1px;
+}
+/* Each ability row fills the full width: STR has 6 fields, CON/INT 5, WIS 4,
+   DEX/CHA 3 — so the shorter rows get explicit counts instead of trailing
+   into empty space. */
+.sheet-root .abil-derived:not(.str-derived) { grid-template-columns: repeat(5, 1fr); }
+.sheet-root .abil-derived.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.sheet-root .abil-derived.cols-3 { grid-template-columns: repeat(3, 1fr); }
+
+/* ════════════════════════════════════════════════════════════
+   SAVING THROWS
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .save-head,
+.sheet-root .save-row {
+  display: grid;
+  grid-template-columns: 1fr 48px 48px;
+  gap: 8px;
+  align-items: center;
+}
+.sheet-root .save-head {
+  font-family: var(--f-display);
+  font-size: 8px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 3px;
+}
+.sheet-root .save-head span:nth-child(2),
+.sheet-root .save-head span:nth-child(3) { text-align: center; }
+.sheet-root .save-row {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sheet-root .save-row:last-child { border-bottom: none; }
+.sheet-root .save-cat {
+  font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.sheet-root .save-mod,
+.sheet-root .save-val {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--panel);
+  padding: 2px 0;
+}
+
+/* ════════════════════════════════════════════════════════════
+   MOVEMENT
+   ════════════════════════════════════════════════════════════ */
+/* THAC0 box (in the armor block) still uses .mv-box */
+.sheet-root .mv-box { text-align: center; padding: 4px 6px; }
+.sheet-root .mv-box label { margin-bottom: 1px; }
+.sheet-root .mv-box input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700; font-size: 18px;
+  border: none; background: transparent; padding: 0;
+}
+/* Movement — vertical ladder (label left, value right), classic PDF order */
+.sheet-root .mv-list { display: flex; flex-direction: column; }
+.sheet-root .mv-line {
+  display: grid;
+  grid-template-columns: 1fr 60px;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sheet-root .mv-line:last-child { border-bottom: none; }
+.sheet-root .mv-line label { margin-bottom: 0; }
+.sheet-root .mv-line input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--panel);
+  padding: 2px 0;
+}
+.sheet-root .mv-line.base input { border-color: var(--green); box-shadow: inset 0 0 0 1px #fff; }
+
+/* ════════════════════════════════════════════════════════════
+   ARMOR & DEFENSE — shield crest + adjusted AC
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .armor-top { display: flex; gap: 12px; align-items: flex-start; }
+.sheet-root .crest-ac { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 0 0 auto; }
+/* A clipped shape can't carry a real border — the browser clips the border
+   away on the angled edges. Instead the shield IS the outline colour, and a
+   ::before inset by the line width paints the interior, leaving an even line
+   on every edge (including the bottom V). Change --shield-line (the inset on
+   ::before) to thicken/thin the outline. */
+.sheet-root .shield {
+  position: relative;
+  width: 66px; height: 72px;
+  background: var(--green);          /* outline colour = base layer */
+  clip-path: polygon(0 0, 100% 0, 100% 64%, 50% 100%, 0 64%);
+  display: flex; align-items: center; justify-content: center;
+  padding-bottom: 14px;
+}
+.sheet-root .shield::before {
+  content: "";
+  position: absolute;
+  inset: 3px;                        /* = outline thickness */
+  background: var(--panel);          /* interior fill */
+  clip-path: polygon(0 0, 100% 0, 100% 64%, 50% 100%, 0 64%);
+}
+.sheet-root .shield input {
+  position: relative; z-index: 1;    /* sit above the ::before fill */
+  border: none; text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700; font-size: 22px;
+  background: transparent; padding: 0;
+}
+.sheet-root .shield-lbl {
+  font-family: var(--f-display);
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-faint);
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.sheet-root .armor-stats { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sheet-root .thac0-box { text-align: center; }
+.sheet-root .thac0-box label { display: inline-flex; align-items: center; gap: 3px; justify-content: center; }
+.sheet-root .thac0-box input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700; font-size: 16px;
+  border: none; background: transparent; padding: 0;
+}
+.sheet-root .adj-ac {
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 5px 7px;
+  background: var(--panel-soft);
+}
+.sheet-root .adj-row {
+  display: grid;
+  grid-template-columns: 1fr 46px;
+  gap: 6px;
+  align-items: center;
+  padding: 1px 0;
+}
+.sheet-root .adj-row label { margin-bottom: 0; }
+.sheet-root .adj-row input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--panel);
+  padding: 1px 0;
+}
+
+/* ── Hit Points / Wounds ─────────────────────────────────── */
+.sheet-root .hp-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sheet-root .hp-box { text-align: center; padding: 6px 4px; }
+.sheet-root .hp-box label { margin-bottom: 1px; }
+.sheet-root .hp-box input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700; font-size: 24px;
+  border: none; background: transparent; padding: 0;
+}
+
+/* ════════════════════════════════════════════════════════════
+   TABLES (weapons, gear, henchmen, gems, ammo, specials)
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .sheet-table { width: 100%; border-collapse: collapse; }
+.sheet-root .sheet-table th {
+  font-family: var(--f-display);
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  text-align: left; color: var(--ink-faint);
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.sheet-root .sheet-table td {
+  padding: 1px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sheet-root .sheet-table tr:nth-child(even) td { background: var(--panel-soft); }
+.sheet-root .sheet-table .tools-col { width: 50px; white-space: nowrap; }
+.sheet-root .sheet-table .qty-col { width: 22%; }
+.sheet-root .sheet-table .wt-col  { width: 16%; }
+.sheet-root .cf-table-scroll { overflow-x: auto; }
+
+/* Weapon table: keep the many short columns from collapsing too far. */
+.sheet-root .weapons .sheet-table { min-width: 760px; }
+.sheet-root .henchmen .sheet-table { min-width: 720px; }
+.sheet-root .weapons .sheet-table td input,
+.sheet-root .henchmen .sheet-table td input { text-align: center; }
+.sheet-root .weapons .sheet-table td:first-child input,
+.sheet-root .henchmen .sheet-table td:first-child input { text-align: left; }
+
+/* ── Ammunition / Special Abilities (compact tables) ─────── */
+.sheet-root .ammo .sheet-table td input { text-align: left; }
+.sheet-root .ammo .qty-col input { text-align: center; font-family: var(--f-display); font-weight: 700; }
+
+/* ── Proficiencies list ──────────────────────────────────── */
+.sheet-root .prof-head,
+.sheet-root .prof-row {
+  display: grid;
+  grid-template-columns: 1fr 48px 48px 50px;
+  gap: 6px;
+  align-items: center;
+}
+.sheet-root .prof-head {
+  font-family: var(--f-display);
+  font-size: 8px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 3px;
+}
+.sheet-root .prof-head span:nth-child(2),
+.sheet-root .prof-head span:nth-child(3) { text-align: center; }
+.sheet-root .prof-row {
+  padding: 2px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sheet-root .prof-row:last-child { border-bottom: none; }
+.sheet-root .prof-num {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--panel);
+  padding: 1px 0;
+}
+
+/* ── Mini-cell (toggles like the 10% XP bonus) ───────────── */
+.sheet-root .mini-cell {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 5px 9px;
+}
+.sheet-root .mini-cell label { margin-bottom: 0; }
+
+/* ════════════════════════════════════════════════════════════
+   TAB 2 — GEAR & TREASURE
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .money-row { display: flex; gap: 8px; }
+.sheet-root .coin { flex: 1; text-align: center; }
+.sheet-root .coin label { margin-bottom: 1px; }
+.sheet-root .coin input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 2px #fff;
+  padding: 4px 2px;
+}
+.sheet-root .xp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px 12px;
+  align-items: end;
+}
+.sheet-root .supply-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px 12px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   TAB 3 — BACKGROUND
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .bg-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+.sheet-root .bg-grid .card { margin-bottom: 0; }
+.sheet-root .portrait-area {
+  width: 100%;
+  min-height: 280px;
+  border: 1px dashed var(--green);
+  background: var(--panel-soft);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; overflow: hidden;
+  border-radius: 3px;
+}
+.sheet-root .portrait-area img { width: 100%; height: auto; display: block; }
+.sheet-root .portrait-placeholder {
+  font-family: var(--f-display);
+  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 16px; text-align: center;
+}
+.sheet-root .vitals-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px 12px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   TAB 4 — SESSION LOG
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .sessions-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; margin-bottom: 12px;
+}
+.sheet-root .sessions-head .sec-title { margin-bottom: 0; font-size: 15px; }
+.sheet-root .add-session { font-size: 12px; padding: 5px 14px; }
+.sheet-root .session-card { border-top-color: var(--green-bright); margin-bottom: 12px; }
+.sheet-root .session-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+.sheet-root .session-grid .span-all { grid-column: 1 / -1; }
+.sheet-root .date-f { max-width: 200px; }
+.sheet-root .session-footer { display: flex; justify-content: flex-end; margin-top: 8px; }
+.sheet-root .session-rm { font-size: 10px; letter-spacing: 0.08em; }
+
+/* ════════════════════════════════════════════════════════════
+   RESPONSIVE — collapse by the sheet's own width (container query)
+   ════════════════════════════════════════════════════════════ */
+
+/* Tablet — tighten the dense grids, narrow the crest. */
+@container sheet (min-width: 641px) and (max-width: 1000px) {
+  .sheet-root .identity-grid { grid-template-columns: repeat(2, 1fr); }
+  .sheet-root .crest-card { flex: 0 0 180px; }
+  .sheet-root .vitals-grid { grid-template-columns: repeat(2, 1fr); }
+  .sheet-root .bg-grid { grid-template-columns: 260px 1fr; }
+}
+
+/* Phone — stack every band into a single column. */
+@container sheet (max-width: 640px) {
+  .sheet-root { padding: 8px; font-size: 14px; }
+
+  /* Header stacks: identity above the crest. */
+  .sheet-root .adnd-header { flex-direction: column; }
+  .sheet-root .crest-card { flex: 1 1 auto; width: 100%; }
+  .sheet-root .adnd-logo { max-height: 70px; }
+  .sheet-root .identity-grid { grid-template-columns: 1fr 1fr; }
+
+  /* All two-card bands stack. */
+  .sheet-root .band { flex-direction: column; }
+  .sheet-root .band > .card { width: 100%; }
+
+  /* Abilities: keep the score block on the LEFT with its derived fields to
+     the right (just narrower than desktop); the grid relaxes to 2-across so
+     the labels stay legible in the tight width. */
+  .sheet-root .abil-row { flex-direction: row; gap: 8px; align-items: stretch; }
+  .sheet-root .abil-id { flex: 0 0 50px; padding: 4px 2px; }
+  .sheet-root .abil-abbr { font-size: 11px; }
+  .sheet-root .abil-score { font-size: 17px; }
+  .sheet-root .abil-derived,
+  .sheet-root .abil-derived:not(.str-derived) { grid-template-columns: repeat(2, 1fr); }
+
+  /* Supplies / vitals to two columns. */
+  .sheet-root .supply-grid { grid-template-columns: 1fr; }
+  .sheet-root .vitals-grid { grid-template-columns: 1fr 1fr; }
+  .sheet-root .xp-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Armor block stacks the shield above its stats. */
+  .sheet-root .armor-top { flex-direction: column; align-items: center; }
+  .sheet-root .armor-stats { width: 100%; }
+
+  /* Coins wrap. */
+  .sheet-root .money-row { flex-wrap: wrap; }
+  .sheet-root .coin { flex: 1 1 28%; }
+
+  /* Background + sessions tabs. */
+  .sheet-root .bg-grid { grid-template-columns: 1fr; }
+  .sheet-root .bg-portrait { max-width: 360px; }
+  .sheet-root .session-grid { grid-template-columns: 1fr; }
+
+  .sheet-root .cf-tab-btn { padding: 6px 12px; font-size: 11px; flex: 1; }
+}

@@ -1,0 +1,17 @@
+{
+  "sheetId": "12e6dbcb-5c58-49b8-94fe-0fc402fb3ca1",
+  "system": "risus-core",
+
+  "emptyCharacter": {
+    "info":         { "name": "" },
+    "playerName":   "",
+    "hook":         "",
+    "luckyShots":   0,
+    "questingDice": 0,
+    "cliches":      [ { "name": "", "tools": "", "max": 4, "current": 4, "primary": "yes" } ],
+    "inventory":    "",
+    "notes":        ""
+  },
+
+  "emptyCliche": { "name": "", "tools": "", "max": 1, "current": 1, "primary": "no" }
+}

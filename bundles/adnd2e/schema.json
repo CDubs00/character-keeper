@@ -1,0 +1,130 @@
+{
+  "emptyCharacter": {
+    "info": {
+      "name": "",
+      "class_kit": "",
+      "race": "",
+      "level": "",
+      "alignment": "",
+      "player": "",
+      "honor": "",
+      "base_honor": "",
+      "reaction_adj": ""
+    },
+
+    "abilities": {
+      "str": { "score": "", "hit": "", "dmg": "", "weight_allow": "", "max_press": "", "open_doors": "", "bend_bars": "" },
+      "dex": { "score": 0, "reaction_adj": "", "missile_adj": "", "defense_adj": "" },
+      "con": { "score": 0, "hp_adj": "", "system_shock": "", "resurrection": "", "poison_save": "", "regen": "" },
+      "int": { "score": 0, "num_lang": "", "max_spell_lvl": "", "learn_spell": "", "max_spells_lvl": "", "spell_immunity": "" },
+      "wis": { "score": 0, "magic_def_adj": "", "bonus_spells": "", "spell_failure": "", "spell_immunity": "" },
+      "cha": { "score": 0, "max_henchmen": "", "loyalty_base": "", "reaction_adj": "" }
+    },
+
+    "saves": {
+      "paralyze": { "save": "", "mod": "" },
+      "rod":      { "save": "", "mod": "" },
+      "petrify":  { "save": "", "mod": "" },
+      "breath":   { "save": "", "mod": "" },
+      "spell":    { "save": "", "mod": "" }
+    },
+
+    "combat": {
+      "thac0": "",
+      "ac": 10,
+      "ac_surprised": "",
+      "ac_shieldless": "",
+      "ac_rear": "",
+      "armor_pieces": "",
+      "defenses": "",
+      "hp_max": 0,
+      "hp_current": 0,
+      "wounds": ""
+    },
+
+    "movement": {
+      "base_rate": "",
+      "light": "",
+      "moderate": "",
+      "heavy": "",
+      "severe": "",
+      "jog": "",
+      "run_x3": "",
+      "run_x4": "",
+      "run_x5": ""
+    },
+
+    "weapons": [],
+    "special_attacks": "",
+    "ammunition": [],
+    "specials": [],
+    "proficiencies": [],
+
+    "gear": [],
+    "magic_notes": "",
+    "valuables": "",
+    "money": { "pp": 0, "gp": 0, "ep": 0, "sp": 0, "cp": 0 },
+    "gems": [],
+    "experience": { "have": "", "need": "", "bonus10": false },
+    "supplies": { "water_wine": "", "rations": "", "feed": "" },
+    "henchmen": [],
+
+    "background": {
+      "vitals": {
+        "family": "",
+        "race_clan": "",
+        "homeland": "",
+        "liege": "",
+        "religion": "",
+        "sex": "",
+        "age": "",
+        "social_class": "",
+        "status": "",
+        "height": "",
+        "weight": "",
+        "birth_rank": "",
+        "siblings": "",
+        "hair": "",
+        "eyes": ""
+      },
+      "description": "",
+      "backstory": ""
+    },
+    "relations": [],
+
+    "sessions": []
+  },
+
+  "emptyWeapon":      { "name": "", "attacks": "", "attack_adj": "", "dmg_adj": "", "thac0": "", "damage": "", "range": "", "weight": "", "size": "", "type": "", "speed": "", "notes": "" },
+  "emptyAmmunition":  { "name": "", "qty": 0 },
+  "emptySpecial":     { "name": "", "description": "" },
+  "emptyProficiency": { "name": "", "slots": "", "check": "", "description": "" },
+  "emptyGear":        { "name": "", "location": "", "wt": "" },
+  "emptyGem":         { "name": "", "value": "" },
+  "emptyHenchmen":    { "name": "", "ac": "", "race_class": "", "hd_lvl": "", "attacks": "", "thac0": "", "dmg": "", "hp": "", "notes": "" },
+  "emptyRelation":    { "name": "", "relation": "", "age": "", "class_home": "", "notes": "" },
+
+  "sidecarPaths":     ["sessions"],
+  "emptySession":     { "date": "@today", "notes": "", "todos": "", "loot": "", "npcs": "", "misc": "" },
+
+  "reference": {
+    "THAC0": "“To Hit Armor Class 0.” Your attack hits when your d20 roll is at least THAC0 minus the target's AC. Lower THAC0 is better, and it improves as you gain levels — fighters fastest, wizards slowest.",
+    "Armor Class": "In 2e, AC counts DOWN: 10 is unarmored and lower (even negative) numbers are better. Leather sits around 8, chain near 5, full plate with a shield lands close to AC 2.",
+    "Adjusted AC": "AC can shift with the situation: you lose your Dexterity defensive bonus when Surprised, lose your shield's protection when attacked from sides it doesn't cover (Shieldless), and a Rear attacker ignores both shield and Dexterity entirely.",
+    "Saving Throws": "Roll d20 and meet or beat the listed number to resist. Saves improve (the number drops) as you level up, and each class has its own progression. The five categories each cover a different kind of threat.",
+    "Paralyzation, Poison & Death Magic": "Save against paralysis, most poisons, and instant-death effects (like a death spell or a finger of death). A successful poison save usually means no effect at all.",
+    "Rod, Staff & Wand": "Save against the magical effects of rods, staves, and wands — and, by default, anything that doesn't fit one of the other four categories.",
+    "Petrification & Polymorph": "Save against being turned to stone or having your form forcibly changed. System Shock (from CON) governs whether you survive the bodily stress afterward.",
+    "Breath Weapon": "Save against area effects you can dodge — most famously a dragon's breath. Success usually halves the damage.",
+    "Spell": "A catch-all save against harmful spells that allow one and don't fall under another category. A Wisdom-based magical defense adjustment can improve it.",
+    "Honor": "An optional subsystem tracking a character's reputation and bearing. High Honor can earn deference and better reactions; losing Honor (through dishonorable acts) can cost standing, allies, and even class benefits.",
+    "System Shock": "A Constitution-derived percentage: your chance to physically survive severe magical stress — petrification, polymorph, magical aging, or being raised from the dead.",
+    "Resurrection Survival": "A Constitution-derived percentage: your chance that a Raise Dead or Resurrection actually takes. Fail and the magic — and the character — is lost.",
+    "Encumbrance & Movement": "Carried weight steps you through Light → Moderate → Heavy → Severe, each lowering your movement rate. Your Base Rate is the unencumbered walk; Jog and Run multiply it (roughly ×2 / ×3 / ×4 / ×5) for short bursts.",
+    "Weapon Speed": "A weapon's Speed Factor is added to your initiative — lower (faster) weapons tend to strike earlier in the round. It can also break ties between attackers acting on the same count.",
+    "Proficiencies": "Weapon proficiencies let you wield a weapon without the non-proficiency penalty. Nonweapon proficiencies (skills) are checked by rolling d20 and trying to roll at or under the governing ability score plus the listed modifier. The two small numbers track slots spent and your target.",
+    "Bend Bars / Lift Gates": "A Strength-derived percentage chance to force open a stuck or barred portal, bend iron bars, or pull off a comparable feat of raw might. You normally get one attempt.",
+    "Open Doors": "A Strength rating for forcing open heavy, stuck, or held doors. The second number (in parentheses on paper) is the slimmer chance against locked, barred, or magically held ones.",
+    "Wounds": "Track damage against your Hit Point total here. At 0 HP a character collapses and is dying; the optional Hovering on Death's Door rule lets them cling to life down to −10."
+  }
+}
