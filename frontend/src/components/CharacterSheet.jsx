@@ -64,13 +64,12 @@ export default function CharacterSheet() {
     setError(null);
     Promise.all([
       api.getCharacter(id),
-      fetch('/api/sheets', { credentials: 'include' }).then(r => r.json()),
       // Roll log is non-critical to the sheet rendering — a flaky/failed fetch
       // here shouldn't block the character from loading, so it gets its own
       // catch instead of falling into the shared .catch below.
       api.getRolls(id).catch(() => []),
     ])
-      .then(([charData, sheets, rollsData]) => {
+      .then(async ([charData, rollsData]) => {
         // api.getCharacter resolves to an { error, status } envelope when the
         // request failed (e.g. 403 Forbidden because this isn't our character,
         // or 404 because it's gone). We must NOT treat that as a character —
@@ -82,9 +81,15 @@ export default function CharacterSheet() {
           return;
         }
         setChar(charData);
-        const found = sheets.find(s => s.sheetId === charData.sheetId && s.enabled !== false);
-        setBundle(found ?? null);
         setRolls(Array.isArray(rollsData) ? rollsData : []);
+
+        // Verify the bundle is present — by sheetId, ignoring the admin-set
+        // `enabled` flag. A disabled sheet still renders for existing
+        // characters; only a truly missing registry entry should trip the
+        // "Sheet Not Found" screen. The /info endpoint exists for exactly
+        // this lookup so we don't have to consult the picker-friendly list.
+        const info = await api.getSheetInfo(charData.sheetId);
+        setBundle(info?.error ? null : info);
         setLoading(false);
       })
       .catch(e => { setError({ message: e.message, status: e.status }); setLoading(false); });

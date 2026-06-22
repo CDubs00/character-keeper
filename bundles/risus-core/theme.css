@@ -36,6 +36,7 @@
   /* ink — soft lavender-white, deliberately not #fff on near-black */
   --ink:          #ece5f4;
   --ink-dim:      #b6a6c9;
+  --hint:         #6c5d84;   /* placeholder / helper text — deliberately quiet */
   --label:        #c79bef;
 
   --danger:       #d4738f;
@@ -89,7 +90,7 @@
   transition: border-color 0.15s, background 0.15s;
 }
 .risus-sheet input::placeholder,
-.risus-sheet textarea::placeholder { color: var(--ink-dim); opacity: 0.6; }
+.risus-sheet textarea::placeholder { color: var(--hint); opacity: 1; }
 
 .risus-sheet input:focus,
 .risus-sheet textarea:focus,
@@ -256,7 +257,7 @@
 .risus-sheet .cliche {
   display: flex;
   gap: var(--gap);
-  align-items: center;
+  align-items: flex-start;
   background: var(--surface);
   border: 1px solid var(--bd);
   border-radius: var(--radius);
@@ -264,7 +265,7 @@
 }
 .risus-sheet .cliche-main { flex: 1; min-width: 0; }
 .risus-sheet .cliche-row { display: flex; align-items: center; gap: 10px; }
-.risus-sheet .cliche-row.tools-row { margin-top: 8px; }
+.risus-sheet .cliche-row.tools-row { margin-top: 8px; flex-direction: column; align-items: stretch; gap: 4px; }
 
 .risus-sheet .primary-flag {
   width: auto;
@@ -274,9 +275,20 @@
   padding: 6px 9px;
   cursor: pointer;
 }
-.risus-sheet .cliche-name { font-weight: 700; font-size: 1rem; }
-.risus-sheet .tools-label { margin: 0; flex-shrink: 0; align-self: center; }
-.risus-sheet .cliche-tools { flex: 1; }
+.risus-sheet .cliche-name { font-weight: 700; font-size: 0.95rem; }
+.risus-sheet .tools-label { margin: 0; }
+/* tools: wrap onto multiple lines and grow downward with content.
+   field-sizing:content auto-grows in Chromium; browsers without it fall back to
+   the rows="1" height, so resize:vertical lets the user drag it taller there. */
+.risus-sheet .cliche-tools {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  min-height: 2.2em;
+  max-height: 12em;
+  field-sizing: content;
+  resize: vertical;
+  overflow-y: auto;
+}
 
 /* dice cluster: labels stack over the boxes; bottoms align so the borderless
    remove glyph lands centred on the number boxes (it shares their height). */
@@ -338,6 +350,81 @@
   font-size: 0.8rem;
 }
 .risus-sheet .session-rm:hover { background: var(--danger); color: #fff; }
+
+/* ---- hooks & tales ---- */
+.risus-sheet .section-hint {
+  margin: 4px 2px 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--hint);
+}
+.risus-sheet .section-hint strong { color: var(--ink-dim); font-weight: 700; }
+
+.risus-sheet .hooks-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.risus-sheet .hook-card {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.risus-sheet .hook-text {
+  flex: 1;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  min-height: 3em;
+  max-height: 22em;
+  field-sizing: content;
+  resize: vertical;
+  overflow-y: auto;
+}
+.risus-sheet .hook-rm { align-self: flex-start; }
+
+/* ---- markdown field (data-type="markdown") ----
+   The app supplies the structural bones in index.css (.cf-md-field / preview /
+   textarea / toggle); the rules below dress them in the Risus palette so the
+   preview reads as a real field and the Edit/Done button matches the violet
+   accent rather than the app default. */
+.risus-sheet .cf-md-field { width: 100%; }
+.risus-sheet .cf-md-preview {
+  background: var(--field);
+  border: 1px solid var(--field-bd);
+  border-radius: var(--radius-sm);
+  padding: 8px 56px 8px 10px;   /* right padding leaves room for the toggle */
+  min-height: 2.6em;
+  color: var(--ink);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.risus-sheet .cf-md-preview strong { color: var(--accent-bright); }
+.risus-sheet .cf-md-preview em { color: var(--ink); }
+.risus-sheet .cf-md-empty { color: var(--hint); font-style: italic; opacity: 1; }
+.risus-sheet .cf-md-textarea {
+  background: var(--field-focus);
+  color: var(--ink);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 8px 56px 8px 10px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+.risus-sheet .cf-md-toggle {
+  color: var(--accent-bright);
+  border-color: var(--accent);
+  background: var(--surface);
+  font-weight: 700;
+  opacity: 0.85;
+}
+.risus-sheet .cf-md-toggle:hover { background: var(--accent-soft); opacity: 1; }
+/* Tiny helper line on inventory/notes that introduces the markdown feature. */
+.risus-sheet .md-hint {
+  font-size: 0.7rem;
+  color: var(--hint);
+  margin: 2px 4px 0;
+}
 
 /* ---- inventory / notes ---- */
 .risus-sheet .risus-bottom {

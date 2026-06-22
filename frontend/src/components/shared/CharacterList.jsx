@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { api, newId, slugify } from '../../api';
 import ActionMenu from './ActionMenu';
 import ShareModal from './ShareModal';
@@ -244,9 +244,14 @@ function NewCharacterModal({ onConfirm, onCancel }) {
     fetch('/api/sheets', { credentials: 'include' })
       .then(r => r.json())
       .then(data => {
-        const enabled = data.filter(s => s.enabled !== false);
-        setSheets(enabled);
-        if (enabled.length === 1) setSelected(enabled[0].sheetId);
+        // Server already filters to enabled + present-on-disk; we just sort.
+        // Alphabetical by name (locale-aware) — matches the user list ordering
+        // in the admin panel for consistency.
+        const sorted = (Array.isArray(data) ? data : [])
+          .filter(s => s.enabled !== false)
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        setSheets(sorted);
+        if (sorted.length === 1) setSelected(sorted[0].sheetId);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -294,10 +299,23 @@ function NewCharacterModal({ onConfirm, onCancel }) {
         {loading && <div style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>Loading…</div>}
         {!loading && sheets.length === 0 && (
           <div style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>
-            No sheet bundles installed. Drop a bundle into <code>/bundles</code> and refresh.
+            No sheet bundles available. Drop a bundle into <code>/bundles</code> and refresh in the admin panel.
           </div>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+
+        {/* Bounded inner scroll. The list is allowed to grow up to ~40% of the
+            viewport before it scrolls on its own — keeps the name field and
+            Create button reachable no matter how many bundles you have. */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.4rem',
+          maxHeight: 'clamp(10rem, 40vh, 22rem)',
+          overflowY: 'auto',
+          // Tiny inner padding so the focus ring / hover border isn't clipped
+          // by the scroll container's right edge.
+          paddingRight: sheets.length > 4 ? '0.25rem' : 0,
+        }}>
           {sheets.map(s => (
             <div
               key={s.sheetId}
@@ -309,6 +327,7 @@ function NewCharacterModal({ onConfirm, onCancel }) {
                 cursor: 'pointer',
                 background: selected === s.sheetId ? 'rgba(180,140,60,0.08)' : 'transparent',
                 transition: 'border-color 0.15s',
+                flex: '0 0 auto',                  // don't let flex shrink rows when scrolling
               }}
             >
               <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.95rem', color: 'var(--text-primary)' }}>{s.name}</div>
@@ -371,7 +390,6 @@ function RenameModal({ character, onConfirm, onCancel }) {
   );
 }
 
-// ─── Campaigns Modal (GM only) ────────────────────────────────────────────────
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 function RoleChip({ label, active, onClick, disabled }) {
   return (
@@ -507,24 +525,72 @@ function AppearanceModal({ user, onUser, onClose }) {
   );
 }
 
-function AdminModal({ currentUser, onClose }) {
-  const [users,    setUsers]    = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState('');
-  const [newName,  setNewName]  = useState('');
-  const [newPass,  setNewPass]  = useState('');
-  const [newRoles, setNewRoles] = useState({ admin: false, gm: false, player: true });
-  const [creating, setCreating] = useState(false);
-  const [settings, setSettings] = useState({ theme: 'tavern', allowExternalLinks: false, allowAttachments: false });
+// ──────────────────────────────────────────────────────────────────────────────
+// AdminModal — three tabs: Settings, Users, Sheets.
+//
+// Why tabs rather than collapsible sections: the panel does three unrelated
+// jobs (app config, user management, sheet registry) and each grows on its
+// own axis. Tabs scope what's on screen to one job, so adding a new user
+// doesn't push settings off the top and the user list doesn't grow without
+// bound inside one shared scroll.
+//
+// Each tab manages its own state and its own data load. The shell only owns
+// the active-tab selection and the close button.
+// ──────────────────────────────────────────────────────────────────────────────
+function AdminTabs({ active, onChange }) {
+  const tabs = [
+    { id: 'settings', label: 'Settings' },
+    { id: 'users',    label: 'Users'    },
+    { id: 'sheets',   label: 'Sheets'   },
+  ];
+  return (
+    <div role="tablist" style={{
+      display: 'flex',
+      gap: '0.25rem',
+      borderBottom: '1px solid var(--border)',
+      marginBottom: '1rem',
+      // Sticks the tab bar to the top of the modal body so it stays visible
+      // when a tab's own content scrolls.
+      position: 'sticky', top: 0,
+      background: 'var(--bg-surface)',
+      zIndex: 1,
+    }}>
+      {tabs.map(t => {
+        const isActive = t.id === active;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(t.id)}
+            style={{
+              padding: '0.55rem 0.9rem',
+              cursor: 'pointer',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: '2px solid ' + (isActive ? 'var(--accent)' : 'transparent'),
+              color: isActive ? 'var(--text-accent)' : 'var(--text-dim)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.7rem',
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              transition: 'all 0.12s',
+              // Overlap the parent's bottom border so the active underline sits
+              // flush rather than floating a pixel above it.
+              marginBottom: '-1px',
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
-  useEffect(() => {
-    api.getUsers().then(u => {
-      setUsers(Array.isArray(u) ? u : []);
-      setLoading(false);
-    });
-    api.getSettings().then(s => { if (s && !s.error) setSettings(s); }).catch(() => {});
-  }, []);
-
+// ── Settings tab ───────────────────────────────────────────────────────────
+function AdminSettingsTab({ settings, setSettings, setError }) {
   const toggleLinks = async () => {
     const next = !settings.allowExternalLinks;
     setSettings(s => ({ ...s, allowExternalLinks: next }));   // optimistic
@@ -545,7 +611,106 @@ function AdminModal({ currentUser, onClose }) {
     if (res?.error) setError(res.error);
   };
 
+  return (
+    <div>
+      <div style={{ marginBottom: '0.9rem' }}>
+        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Default theme</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', marginBottom: '0.4rem' }}>
+          Used for share pages and users who haven't picked their own.
+        </div>
+        <ThemeSwatches value={settings.theme} onPick={pickTheme} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Allow external links in sheets</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.1rem' }}>
+            When off, off-site links in sheet content render as plain text.
+          </div>
+        </div>
+        <button type="button" onClick={toggleLinks} role="switch" aria-checked={settings.allowExternalLinks}
+          title={settings.allowExternalLinks ? 'External links allowed' : 'External links blocked'}
+          style={{
+            flexShrink: 0, width: '2.6rem', height: '1.4rem', borderRadius: '1rem', cursor: 'pointer',
+            border: '1px solid ' + (settings.allowExternalLinks ? 'var(--accent)' : 'var(--border)'),
+            background: settings.allowExternalLinks ? 'var(--accent-glow)' : 'var(--bg-input)',
+            position: 'relative', transition: 'all 0.15s',
+          }}>
+          <span style={{
+            position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+            left: settings.allowExternalLinks ? 'calc(100% - 1.15rem)' : '0.15rem',
+            width: '1rem', height: '1rem', borderRadius: '50%',
+            background: settings.allowExternalLinks ? 'var(--accent)' : 'var(--text-dim)',
+            transition: 'all 0.15s',
+          }} />
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginTop: '0.9rem' }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Allow file attachments</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.1rem' }}>
+            Lets players keep PDFs, docs, spreadsheets and images with a character.
+          </div>
+        </div>
+        <button type="button" onClick={toggleAttachments} role="switch" aria-checked={settings.allowAttachments}
+          title={settings.allowAttachments ? 'Attachments allowed' : 'Attachments disabled'}
+          style={{
+            flexShrink: 0, width: '2.6rem', height: '1.4rem', borderRadius: '1rem', cursor: 'pointer',
+            border: '1px solid ' + (settings.allowAttachments ? 'var(--accent)' : 'var(--border)'),
+            background: settings.allowAttachments ? 'var(--accent-glow)' : 'var(--bg-input)',
+            position: 'relative', transition: 'all 0.15s',
+          }}>
+          <span style={{
+            position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+            left: settings.allowAttachments ? 'calc(100% - 1.15rem)' : '0.15rem',
+            width: '1rem', height: '1rem', borderRadius: '50%',
+            background: settings.allowAttachments ? 'var(--accent)' : 'var(--text-dim)',
+            transition: 'all 0.15s',
+          }} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Users tab ──────────────────────────────────────────────────────────────
+function AdminUsersTab({ currentUser, setError }) {
+  const [users,    setUsers]    = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [filter,   setFilter]   = useState('');
+  const [newName,  setNewName]  = useState('');
+  const [newPass,  setNewPass]  = useState('');
+  const [newRoles, setNewRoles] = useState({ admin: false, gm: false, player: true });
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    api.getUsers().then(u => {
+      setUsers(Array.isArray(u) ? u : []);
+      setLoading(false);
+    });
+  }, []);
+
   const isSelf = (u) => u.username === currentUser?.username;
+
+  // Filter first (case-insensitive substring), then alphabetize, then pin self
+  // to the top. Self pins even when the filter would otherwise have hidden it
+  // — no: we pin only if self is still in the filtered set. Filtering self out
+  // is a valid user action ("show me everyone except me"), so we respect it.
+  const orderedUsers = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    const filtered = needle
+      ? users.filter(u => u.username.toLowerCase().includes(needle))
+      : users.slice();
+    filtered.sort((a, b) => a.username.localeCompare(b.username));
+    const selfIdx = filtered.findIndex(isSelf);
+    if (selfIdx > 0) {
+      const [self] = filtered.splice(selfIdx, 1);
+      filtered.unshift(self);
+    }
+    return filtered;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users, filter, currentUser?.username]);
 
   const toggleRole = async (u, role) => {
     if (role === 'admin' && isSelf(u)) return; // mirror backend self-lockout guard
@@ -593,93 +758,36 @@ function AdminModal({ currentUser, onClose }) {
   const canCreate = newName.trim() && newPass && !creating;
 
   return (
-    <Modal
-      title="Admin Panel"
-      subtitle="Settings & Users"
-      onClose={onClose}
-      hideCancel
-      footer={<button className="btn-ghost" onClick={onClose}>Close</button>}
-    >
-      {error && (
-        <div style={{ color: 'var(--red)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{error}</div>
-      )}
-
-      {/* App settings */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.6rem' }}>
-          App Settings
-        </div>
-
-        <div style={{ marginBottom: '0.9rem' }}>
-          <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Default theme</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', marginBottom: '0.4rem' }}>
-            Used for share pages and users who haven't picked their own.
-          </div>
-          <ThemeSwatches value={settings.theme} onPick={pickTheme} />
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Allow external links in sheets</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.1rem' }}>
-              When off, off-site links in sheet content render as plain text.
-            </div>
-          </div>
-          <button type="button" onClick={toggleLinks} role="switch" aria-checked={settings.allowExternalLinks}
-            title={settings.allowExternalLinks ? 'External links allowed' : 'External links blocked'}
-            style={{
-              flexShrink: 0, width: '2.6rem', height: '1.4rem', borderRadius: '1rem', cursor: 'pointer',
-              border: '1px solid ' + (settings.allowExternalLinks ? 'var(--accent)' : 'var(--border)'),
-              background: settings.allowExternalLinks ? 'var(--accent-glow)' : 'var(--bg-input)',
-              position: 'relative', transition: 'all 0.15s',
-            }}>
-            <span style={{
-              position: 'absolute', top: '50%', transform: 'translateY(-50%)',
-              left: settings.allowExternalLinks ? 'calc(100% - 1.15rem)' : '0.15rem',
-              width: '1rem', height: '1rem', borderRadius: '50%',
-              background: settings.allowExternalLinks ? 'var(--accent)' : 'var(--text-dim)',
-              transition: 'all 0.15s',
-            }} />
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginTop: '0.9rem' }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Allow file attachments</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.1rem' }}>
-              Lets players keep PDFs, docs, spreadsheets and images with a character.
-            </div>
-          </div>
-          <button type="button" onClick={toggleAttachments} role="switch" aria-checked={settings.allowAttachments}
-            title={settings.allowAttachments ? 'Attachments allowed' : 'Attachments disabled'}
-            style={{
-              flexShrink: 0, width: '2.6rem', height: '1.4rem', borderRadius: '1rem', cursor: 'pointer',
-              border: '1px solid ' + (settings.allowAttachments ? 'var(--accent)' : 'var(--border)'),
-              background: settings.allowAttachments ? 'var(--accent-glow)' : 'var(--bg-input)',
-              position: 'relative', transition: 'all 0.15s',
-            }}>
-            <span style={{
-              position: 'absolute', top: '50%', transform: 'translateY(-50%)',
-              left: settings.allowAttachments ? 'calc(100% - 1.15rem)' : '0.15rem',
-              width: '1rem', height: '1rem', borderRadius: '50%',
-              background: settings.allowAttachments ? 'var(--accent)' : 'var(--text-dim)',
-              transition: 'all 0.15s',
-            }} />
-          </button>
-        </div>
-      </div>
-
-      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1rem', marginBottom: '0.75rem' }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-          Users
-        </div>
-      </div>
+    <div>
+      {/* Filter row — substring match, case-insensitive. No debounce; even at
+          hundreds of users the cost is trivial. */}
+      <input
+        type="text"
+        value={filter}
+        onChange={e => setFilter(e.target.value)}
+        placeholder={`Filter ${users.length} user${users.length === 1 ? '' : 's'}…`}
+        style={{ ...inputStyle, marginBottom: '0.6rem' }}
+      />
 
       {loading ? (
         <div style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>Loading users…</div>
+      ) : orderedUsers.length === 0 ? (
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.85rem', fontFamily: 'var(--font-mono)' }}>
+          No matches.
+        </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {users.map(u => (
+        // Bounded inner scroll. The list is the part that grows with N; we cap
+        // it so Create User stays visible at the bottom of the modal. clamp()
+        // keeps it sensible on both phone and desktop heights.
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          maxHeight: 'clamp(12rem, 45vh, 26rem)',
+          overflowY: 'auto',
+          paddingRight: orderedUsers.length > 4 ? '0.25rem' : 0,
+        }}>
+          {orderedUsers.map(u => (
             <div
               key={u.username}
               style={{
@@ -690,8 +798,9 @@ function AdminModal({ currentUser, onClose }) {
                 flexWrap: 'wrap',
                 padding: '0.6rem 0.75rem',
                 background: 'var(--bg-raised)',
-                border: '1px solid var(--border)',
+                border: '1px solid ' + (isSelf(u) ? 'var(--accent-glow)' : 'var(--border)'),
                 borderRadius: '2px',
+                flex: '0 0 auto',
               }}
             >
               <div style={{ minWidth: '5rem' }}>
@@ -720,8 +829,8 @@ function AdminModal({ currentUser, onClose }) {
         </div>
       )}
 
-      {/* Create user */}
-      <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+      {/* Create user — stays put below the (scrollable) list. */}
+      <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.6rem' }}>
           Create User
         </div>
@@ -755,6 +864,222 @@ function AdminModal({ currentUser, onClose }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Sheets tab ─────────────────────────────────────────────────────────────
+// Loads the full registry via ?all=1 so disabled rows show up too. Each row
+// exposes an enable/disable toggle and a delete action (registry-only — the
+// bundle folder on disk is preserved). The Refresh button re-runs the bundle
+// scan so a freshly dropped-in bundle folder shows up without a restart.
+function AdminSheetsTab({ setError }) {
+  const [sheets,     setSheets]     = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState('');
+
+  const load = async () => {
+    const data = await api.getAllSheets();
+    if (data?.error) {
+      setError(data.error);
+      setSheets([]);
+    } else {
+      setSheets(Array.isArray(data) ? data : []);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  // Alphabetical by name. No self-pinning concept here — every row is equal.
+  const ordered = useMemo(
+    () => [...sheets].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    [sheets]
+  );
+
+  const refresh = async () => {
+    setRefreshing(true);
+    setRefreshMsg('');
+    const res = await api.refreshSheets();
+    setRefreshing(false);
+    if (res?.error) {
+      setError(res.error);
+      return;
+    }
+    // Re-pull the registry to pick up any new rows the scan added.
+    await load();
+    const added = res?.added?.length || 0;
+    setRefreshMsg(added ? `Found ${added} new bundle${added === 1 ? '' : 's'}.` : 'No new bundles found.');
+    // Fade the toast after a few seconds so it doesn't sit there forever.
+    setTimeout(() => setRefreshMsg(''), 3500);
+  };
+
+  const toggleEnabled = async (s) => {
+    const next = !s.enabled;
+    setSheets(prev => prev.map(x => x.sheetId === s.sheetId ? { ...x, enabled: next } : x)); // optimistic
+    const res = await api.setSheetEnabled(s.sheetId, next);
+    if (res?.error) {
+      setSheets(prev => prev.map(x => x.sheetId === s.sheetId ? { ...x, enabled: !next } : x)); // revert
+      setError(res.error);
+    }
+  };
+
+  const remove = async (s) => {
+    // Two distinct cases. If the folder is on disk, this is a true destructive
+    // delete (bundle + registry row gone, characters using it stop rendering).
+    // If the folder was already missing, we're just cleaning up an orphan row.
+    const msg = s.present
+      ? `Delete "${s.name}"?\n\nThis removes the bundle folder AND its registry entry. Any character built on this sheet will fail to render. This cannot be undone.`
+      : `Remove "${s.name}" from the registry?\n\nThe bundle folder is already gone — this just clears the orphan row.`;
+    if (!window.confirm(msg)) return;
+    const res = await api.deleteSheet(s.sheetId);
+    if (res?.ok) setSheets(prev => prev.filter(x => x.sheetId !== s.sheetId));
+    else setError(res?.error || 'Could not remove sheet.');
+  };
+
+  return (
+    <div>
+      {/* Refresh action — discovers new bundle folders without a restart. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.7rem' }}>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={refresh}
+          disabled={refreshing}
+          style={{ opacity: refreshing ? 0.6 : 1 }}
+        >
+          {refreshing ? 'Scanning…' : 'Refresh Bundles'}
+        </button>
+        {refreshMsg && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+            {refreshMsg}
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>Loading sheets…</div>
+      ) : ordered.length === 0 ? (
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.85rem' }}>
+          No bundles registered. Drop a bundle folder into <code>/bundles</code> and Refresh.
+        </div>
+      ) : (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          maxHeight: 'clamp(12rem, 45vh, 26rem)',
+          overflowY: 'auto',
+          paddingRight: ordered.length > 4 ? '0.25rem' : 0,
+        }}>
+          {ordered.map(s => (
+            <div
+              key={s.sheetId}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                flexWrap: 'wrap',
+                padding: '0.6rem 0.75rem',
+                background: 'var(--bg-raised)',
+                border: '1px solid var(--border)',
+                borderRadius: '2px',
+                flex: '0 0 auto',
+                // Visually dim disabled rows so the state reads at a glance
+                // even when the toggle is off-screen on a narrow modal.
+                opacity: s.enabled ? 1 : 0.55,
+              }}
+            >
+              <div style={{ minWidth: '8rem', flex: '1 1 auto' }}>
+                <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                  {s.name}
+                  {!s.present && (
+                    <span title="Bundle folder not found on disk — only registry row remains"
+                      style={{
+                        fontFamily: 'var(--font-mono)', fontSize: '0.55rem',
+                        color: 'var(--red)', marginLeft: '0.5rem',
+                        letterSpacing: '0.1em', textTransform: 'uppercase',
+                      }}>
+                      MISSING
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                  v{s.version || '0.0.0'} · {s.folder}/
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto' }}>
+                {/* Toggle reuses the same switch shape as the settings-tab toggles. */}
+                <button type="button" onClick={() => toggleEnabled(s)} role="switch" aria-checked={!!s.enabled}
+                  title={s.enabled ? 'Enabled — visible in New Character' : 'Disabled — hidden from New Character'}
+                  style={{
+                    flexShrink: 0, width: '2.6rem', height: '1.4rem', borderRadius: '1rem', cursor: 'pointer',
+                    border: '1px solid ' + (s.enabled ? 'var(--accent)' : 'var(--border)'),
+                    background: s.enabled ? 'var(--accent-glow)' : 'var(--bg-input)',
+                    position: 'relative', transition: 'all 0.15s',
+                  }}>
+                  <span style={{
+                    position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+                    left: s.enabled ? 'calc(100% - 1.15rem)' : '0.15rem',
+                    width: '1rem', height: '1rem', borderRadius: '50%',
+                    background: s.enabled ? 'var(--accent)' : 'var(--text-dim)',
+                    transition: 'all 0.15s',
+                  }} />
+                </button>
+                <ActionMenu items={[{ label: 'Delete', danger: true, onClick: () => remove(s) }]} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: '0.9rem', fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+        Disable hides a bundle from the New Character picker — existing characters
+        that use it keep working. Delete removes both the bundle folder and the
+        registry row; any character built on a deleted bundle will fail to render.
+      </div>
+    </div>
+  );
+}
+
+// ── Shell ──────────────────────────────────────────────────────────────────
+function AdminModal({ currentUser, onClose }) {
+  const [tab,      setTab]      = useState('settings');
+  const [error,    setError]    = useState('');
+  const [settings, setSettings] = useState({ theme: 'tavern', allowExternalLinks: false, allowAttachments: false });
+
+  // Settings load lives in the shell because both the Settings tab and any
+  // future tab might want to read app-level config. Tab components receive
+  // settings via props rather than each fetching them independently.
+  useEffect(() => {
+    api.getSettings().then(s => { if (s && !s.error) setSettings(s); }).catch(() => {});
+  }, []);
+
+  return (
+    <Modal
+      title="Admin Panel"
+      subtitle="Settings · Users · Sheets"
+      onClose={onClose}
+      hideCancel
+      footer={<button className="btn-ghost" onClick={onClose}>Close</button>}
+    >
+      <AdminTabs active={tab} onChange={setTab} />
+
+      {error && (
+        <div style={{ color: 'var(--red)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{error}</div>
+      )}
+
+      {tab === 'settings' && (
+        <AdminSettingsTab settings={settings} setSettings={setSettings} setError={setError} />
+      )}
+      {tab === 'users' && (
+        <AdminUsersTab currentUser={currentUser} setError={setError} />
+      )}
+      {tab === 'sheets' && (
+        <AdminSheetsTab setError={setError} />
+      )}
     </Modal>
   );
 }
