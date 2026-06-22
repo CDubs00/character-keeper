@@ -172,6 +172,30 @@ export const api = {
   async getSheets() {
     return handle(await fetch(`${BASE}/api/sheets`));
   },
+  async getSheetInfo(sheetId) {
+    // Single-sheet metadata lookup — unlike getSheets(), this returns the row
+    // even if the sheet is disabled. Use this for "does this character's
+    // bundle exist?" checks; use getSheets() for picker lists.
+    return handle(await fetch(`${BASE}/api/sheets/${sheetId}/info`));
+  },
+  async getAllSheets() {
+    // Admin-only — returns the full registry (including disabled rows) with a
+    // `present` flag on each entry indicating whether the folder still resolves.
+    return handle(await fetch(`${BASE}/api/sheets?all=1`));
+  },
+  async setSheetEnabled(sheetId, enabled) {
+    return handle(await fetch(`${BASE}/api/sheets/${sheetId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }));
+  },
+  async deleteSheet(sheetId) {
+    return handle(await fetch(`${BASE}/api/sheets/${sheetId}`, { method: 'DELETE' }));
+  },
+  async refreshSheets() {
+    return handle(await fetch(`${BASE}/api/sheets/refresh`, { method: 'POST' }));
+  },
   async getSheetSchema(sheetId) {
     return handle(await fetch(`${BASE}/api/sheets/${sheetId}/schema`));
   },

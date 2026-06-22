@@ -54,10 +54,6 @@
                 <label>Player Name</label>
                 <input type="text" data-bind="playerName" />
               </div>
-              <div class="field field-wide">
-                <label>Hook</label>
-                <input type="text" data-bind="hook" placeholder="The one-line reason this character matters" />
-              </div>
             </div>
           </section>
 
@@ -76,11 +72,11 @@
                       <option value="yes">&#9733; Primary</option>
                       <option value="no">Secondary</option>
                     </select>
-                    <input type="text" data-bind="name" class="cliche-name" placeholder="Clich&eacute; (e.g. Grizzled Ranger)" />
+                    <input type="text" data-bind="name" data-type="autofit" data-max-font="16" data-min-font="11" class="cliche-name" placeholder="Clich&eacute; (e.g. Grizzled Ranger)" />
                   </div>
                   <div class="cliche-row tools-row">
                     <label class="tools-label">Tools of the Trade</label>
-                    <input type="text" data-bind="tools" class="cliche-tools" placeholder="Bow, traps, knowledge of the wild&hellip;" />
+                    <textarea data-bind="tools" class="cliche-tools" rows="1" placeholder="Bow, traps, knowledge of the wild&hellip;"></textarea>
                   </div>
                 </div>
 
@@ -99,15 +95,32 @@
             </div>
           </section>
 
+          <!-- Hooks & Tales -->
+          <section class="risus-hooks">
+            <div class="section-head">
+              <h2>Hooks &amp; Tales</h2>
+              <button class="btn-add" data-action="add" data-target="hooks">+ Add</button>
+            </div>
+            <p class="section-hint">A <strong>Hook</strong> is a juicy flaw &mdash; a curse, an obsession, a sworn vow. A <strong>Tale</strong> is a short biography. Each one the GM accepts is worth a bonus die.</p>
+            <div class="hooks-list" data-list="hooks">
+              <div class="hook-card" data-item>
+                <textarea data-bind="text" data-type="markdown" class="hook-text" rows="2" placeholder="A flaw, a vow, a slice of backstory&hellip;"></textarea>
+                <button class="btn-remove hook-rm" data-action="remove" title="Remove">&#10005;</button>
+              </div>
+            </div>
+          </section>
+
           <!-- Inventory / Notes -->
           <section class="risus-bottom">
             <div class="textblock">
               <label>Inventory</label>
-              <textarea data-bind="inventory" rows="10" placeholder="What's in the pack, on the belt, up the sleeve&hellip;"></textarea>
+              <textarea data-bind="inventory" data-type="markdown" rows="10" placeholder="What's in the pack, on the belt, up the sleeve&hellip;"></textarea>
+              <div class="md-hint">Markdown: <code>**bold**</code>, <code>*italic*</code>, <code>- bullets</code></div>
             </div>
             <div class="textblock">
               <label>Notes</label>
-              <textarea data-bind="notes" rows="10" placeholder="Salt, backstory, allegiances, loose threads&hellip;"></textarea>
+              <textarea data-bind="notes" data-type="markdown" rows="10" placeholder="Salt, backstory, allegiances, loose threads&hellip;"></textarea>
+              <div class="md-hint">Markdown: <code>**bold**</code>, <code>*italic*</code>, <code>- bullets</code></div>
             </div>
           </section>
 

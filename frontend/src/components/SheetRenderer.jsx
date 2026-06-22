@@ -163,6 +163,54 @@ function AutofitInput({ maxFont = 18, minFont = 10, ...rest }) {
   return React.createElement('input', { ...rest, ref });
 }
 
+// ── Markdown field with edit/preview toggle (data-type="markdown") ───────────
+// Bundles set data-type="markdown" on a <textarea data-bind="...">. Display
+// renders the formatted markdown read-only via renderMarkdown (the same XSS-
+// safe React-element pass used by export / info popovers — no HTML strings,
+// no link rendering). A small "Edit" button flips the same box into a raw
+// textarea; "Done" returns to the formatted view. The raw text is what gets
+// persisted; the preview is purely a display layer.
+function MarkdownField({ value, onChange, disabled, placeholder, className, rows, ...rest }) {
+  const [editing, setEditing] = useState(false);
+  const text = String(value ?? '');
+  const blank = !text.trim();
+
+  // In edit mode (or in any read-only context where toggling makes no sense
+  // and the user can't change anything anyway), show a plain textarea.
+  if (editing && !disabled) {
+    return React.createElement('div', { className: `cf-md-field cf-md-edit ${className || ''}`.trim() },
+      React.createElement('textarea', {
+        ...rest,
+        value: text,
+        onChange,
+        placeholder,
+        rows: rows || 6,
+        autoFocus: true,
+        className: 'cf-md-textarea',
+      }),
+      React.createElement('button', {
+        type: 'button',
+        className: 'cf-md-toggle',
+        onClick: () => setEditing(false),
+      }, 'Done')
+    );
+  }
+
+  // Display: formatted preview, or a muted placeholder when empty.
+  return React.createElement('div', { className: `cf-md-field cf-md-view ${className || ''}`.trim() },
+    React.createElement('div', { className: 'cf-md-preview' },
+      blank
+        ? React.createElement('span', { className: 'cf-md-empty' }, placeholder || '')
+        : renderMarkdown(text)
+    ),
+    disabled ? null : React.createElement('button', {
+      type: 'button',
+      className: 'cf-md-toggle',
+      onClick: () => setEditing(true),
+    }, 'Edit')
+  );
+}
+
 const XP_MILESTONES = new Set([5, 10, 15, 20, 25, 30]);
 
 // Collapsible section. Opt-in: an author puts data-collapsible="Title" on an
@@ -823,6 +871,21 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
     if (dataType === 'tracker')    return React.createElement(Tracker,     { key, value: value ?? 0, max: dataMax ?? 3, onChange });
     if (dataType === 'toggle')     return React.createElement(Toggle,      { key, value: !!value, onChange });
     if (dataType === 'xp-tracker') return React.createElement(XPTracker,   { key, value: value ?? 0, max: dataMax ?? 30, onChange });
+    if (dataType === 'markdown') {
+      // Export always renders read-only formatted text — same shape as the
+      // existing textarea branch below — so the markdown widget collapses to
+      // the formatted view in print/PDF flows.
+      if (sheetExportMode) {
+        return React.createElement('div', { key, className: 'cf-export-text' }, renderMarkdown(value) ?? '');
+      }
+      const mdOnChange = sheetReadOnly ? () => {} : (e) => updateRef.current(setPath(char, bindPath, e.target.value));
+      const inputProps = buildProps(attrs, key, ['data-bind','data-type'], {
+        value: value ?? '',
+        onChange: mdOnChange,
+        disabled: sheetReadOnly,
+      });
+      return React.createElement(MarkdownField, inputProps);
+    }
   }
 
   // ── data-bind → controlled input ──────────────────────────────────────────
@@ -947,6 +1010,18 @@ function renderItemChildFull(node, item, itemUpdate, schemaRef, charId, key, ite
     if (dataType === 'tracker')    return React.createElement(Tracker,     { key, value: value ?? 0, max: dataMax ?? 3, onChange });
     if (dataType === 'rank-badge') return React.createElement(RankBadge,   { key, value });
     if (dataType === 'attr-badge') return React.createElement('span',      { key, className: 'attr-badge' }, value ?? '');
+    if (dataType === 'markdown') {
+      if (sheetExportMode) {
+        return React.createElement('div', { key, className: 'cf-export-text' }, renderMarkdown(value) ?? '');
+      }
+      const mdOnChange = sheetReadOnly ? () => {} : (e) => itemUpdate({ [bindPath]: e.target.value });
+      const inputProps = buildProps(attrs, key, ['data-bind','data-type'], {
+        value: value ?? '',
+        onChange: mdOnChange,
+        disabled: sheetReadOnly,
+      });
+      return React.createElement(MarkdownField, inputProps);
+    }
   }
 
   if (bindPath && !dataType) {

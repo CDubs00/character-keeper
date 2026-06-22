@@ -5,7 +5,7 @@
   "emptyCharacter": {
     "info":         { "name": "" },
     "playerName":   "",
-    "hook":         "",
+    "hooks":        [],
     "luckyShots":   0,
     "questingDice": 0,
     "cliches":      [ { "name": "", "tools": "", "max": 4, "current": 4, "primary": "yes" } ],
@@ -15,17 +15,21 @@
   },
 
   "emptyCliche":  { "name": "", "tools": "", "max": 1, "current": 1, "primary": "no" },
+  "emptyHook":    { "text": "" },
 
   "sidecarPaths": [ "sessions" ],
+
   "searchable": {
-    "hook":              "Hook",
-    "cliches.name":           "Cliche",
-    "religion":          "Religion",
-    "inventory":         "Inventory",
-    "notes":             "Notes"
+    "hooks.text":    "Hooks & Tales",
+    "cliches.name":  "Cliché",
+    "cliches.tools": "Tools of the Trade",
+    "inventory":     "Inventory",
+    "notes":         "Notes"
   },
+
   "dice": {
-  "available": ["d6"]
+    "available": ["d6"]
   },
+
   "emptySession": { "date": "@today", "notes": "", "npcs": "", "loot": "" }
 }

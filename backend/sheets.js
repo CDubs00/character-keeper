@@ -185,9 +185,14 @@ function scanBundles(dataDir) {
 // as a hint, but we verify it still exists.
 // ---------------------------------------------------------------------------
 
+// Note: this resolver intentionally does NOT filter by `enabled`. "Disabled"
+// means "hidden from the new-character picker," not "broken." Existing
+// characters built on a disabled sheet must still load their schema/html/css.
+// The `enabled` flag is consulted by the listing endpoint (GET /api/sheets)
+// only.
 function resolveBundleFolder(dataDir, sheetId) {
   const registry = loadRegistry(dataDir);
-  const entry = registry.find(r => r.sheetId === sheetId && r.enabled);
+  const entry = registry.find(r => r.sheetId === sheetId);
   if (!entry) return null;
 
   const sheetsDir = bundlesDir(dataDir);
@@ -228,11 +233,47 @@ function resolveBundleFolder(dataDir, sheetId) {
 function registerRoutes(app, dataDir, requireAuth) {
 
   // GET /api/sheets
-  // Returns all enabled registry entries — used by the frontend to know
-  // which sheets are available when creating a new character.
+  // Returns the picker-friendly sheet list — entries that are both `enabled`
+  // and currently resolvable on disk. A disabled bundle, a missing folder, or
+  // an orphan registry row all hide here without touching the registry itself.
+  //
+  // Admins can pass ?all=1 to get the full registry including disabled rows
+  // and a computed `present` flag — that's what the admin panel uses.
   app.get('/api/sheets', requireAuth, (req, res) => {
     const registry = loadRegistry(dataDir);
-    res.json(registry.filter(r => r.enabled));
+    const wantAll  = req.query.all === '1' && req.session?.user?.admin;
+
+    if (wantAll) {
+      // Annotate each row with `present` so the admin UI can flag orphans
+      // (folder gone, row still in registry) without re-resolving client-side.
+      const annotated = registry.map(r => ({
+        ...r,
+        present: !!resolveBundleFolder(dataDir, r.sheetId),
+      }));
+      return res.json(annotated);
+    }
+
+    res.json(
+      registry.filter(r => r.enabled && resolveBundleFolder(dataDir, r.sheetId))
+    );
+  });
+
+  // GET /api/sheets/:sheetId/info
+  // Returns metadata for a single registered sheet, regardless of `enabled`.
+  // This is what character-load uses to verify a character's bundle is present
+  // and to render its name/version in chrome. Looking up "do I have this
+  // specific sheet?" is a different question from "what's in the picker?", and
+  // tangling them is what broke disabled-but-existing characters in the first
+  // place. Auth-only (logged in) — no admin check; players need to view their
+  // own characters even when an admin has disabled the sheet.
+  app.get('/api/sheets/:sheetId/info', requireAuth, (req, res) => {
+    const registry = loadRegistry(dataDir);
+    const entry = registry.find(r => r.sheetId === req.params.sheetId);
+    if (!entry) return res.status(404).json({ error: 'Sheet not found' });
+    res.json({
+      ...entry,
+      present: !!resolveBundleFolder(dataDir, entry.sheetId),
+    });
   });
 
   // GET /api/sheets/:sheetId/schema
@@ -308,6 +349,82 @@ function registerRoutes(app, dataDir, requireAuth) {
 
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.sendFile(target);
+  });
+
+  // PATCH /api/sheets/:sheetId  (admin only)
+  // Updates registry metadata. Today only `enabled` is mutable — flip it to
+  // hide a sheet from the picker without touching characters that use it.
+  app.patch('/api/sheets/:sheetId', requireAuth, (req, res) => {
+    if (!req.session?.user?.admin) {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+
+    const registry = loadRegistry(dataDir);
+    const idx = registry.findIndex(r => r.sheetId === req.params.sheetId);
+    if (idx === -1) return res.status(404).json({ error: 'Sheet not found' });
+
+    const patch = {};
+    if (typeof req.body?.enabled === 'boolean') patch.enabled = req.body.enabled;
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: 'No supported fields to update' });
+    }
+
+    registry[idx] = { ...registry[idx], ...patch };
+    saveRegistry(dataDir, registry);
+    res.json({ ...registry[idx], present: !!resolveBundleFolder(dataDir, registry[idx].sheetId) });
+  });
+
+  // DELETE /api/sheets/:sheetId  (admin only)
+  // Removes BOTH the bundle folder on disk and the registry row. This is a
+  // hard delete — characters built on this sheet will fail to render after.
+  //
+  // Safety: we never recursive-delete anything outside BUNDLES_DIR. The
+  // resolver already pulls paths from that root, but a recursive rm is
+  // dangerous enough to warrant an explicit prefix check in case the
+  // registry has been hand-edited.
+  //
+  // Note on built-ins: bundles seeded from /app/seed-bundles will be
+  // re-created (and re-registered) on the next container restart, because
+  // seedBundles only checks whether the target folder exists. That's a
+  // feature — a deleted built-in resets to its shipped state — but it
+  // means delete isn't "permanent" for seeded bundles unless you remove
+  // them from the seed dir too.
+  app.delete('/api/sheets/:sheetId', requireAuth, (req, res) => {
+    if (!req.session?.user?.admin) {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+
+    const registry = loadRegistry(dataDir);
+    const idx = registry.findIndex(r => r.sheetId === req.params.sheetId);
+    if (idx === -1) return res.status(404).json({ error: 'Sheet not found' });
+
+    // Resolve the folder BEFORE mutating the registry — we need the row in
+    // place for the lookup. Missing folder is fine (orphan row cleanup); we
+    // just skip the rm and proceed to the registry mutation.
+    const folder = resolveBundleFolder(dataDir, req.params.sheetId);
+    if (folder) {
+      const root   = path.resolve(bundlesDir(dataDir));
+      const target = path.resolve(folder);
+      // Must be strictly inside the bundles dir — not the root itself, not
+      // a sibling path that happens to share a prefix.
+      const insideRoot = target !== root && target.startsWith(root + path.sep);
+      if (!insideRoot) {
+        console.warn(`[sheets] Refused to delete folder outside BUNDLES_DIR: ${target}`);
+        return res.status(500).json({ error: 'Bundle folder is outside the bundles directory; refusing to delete.' });
+      }
+      try {
+        fs.rmSync(target, { recursive: true, force: true });
+        console.log(`[sheets] Deleted bundle folder: ${target}`);
+      } catch (e) {
+        console.error(`[sheets] Failed to remove bundle folder ${target}:`, e.message);
+        return res.status(500).json({ error: `Failed to remove bundle folder: ${e.message}` });
+      }
+    }
+
+    const [removed] = registry.splice(idx, 1);
+    saveRegistry(dataDir, registry);
+    console.log(`[sheets] Removed registry entry: '${removed.name}' (${removed.sheetId})`);
+    res.json({ ok: true });
   });
 
   // POST /api/sheets/refresh  (admin only)

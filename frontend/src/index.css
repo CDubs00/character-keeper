@@ -604,3 +604,37 @@ label {
 .sheet-root .cf-export-text .cf-md-list:last-child { margin-bottom: 0; }
 .cf-info-text .cf-md-list li,
 .sheet-root .cf-export-text .cf-md-list li { margin: 0.15em 0; }
+
+/* ── Markdown field (data-type="markdown") ────────────────────────────────
+   A live edit/preview toggle for bound textarea content. Styled minimally
+   at the app level — bundle themes own the colors, borders, and spacing
+   to match the rest of their fields. Reuses .cf-md-p / .cf-md-list rules
+   above for the formatted output inside .cf-md-preview. */
+.sheet-root .cf-md-field { position: relative; }
+.sheet-root .cf-md-preview {
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 1.4em;
+  padding: 8px 10px;
+}
+.sheet-root .cf-md-preview .cf-md-p { margin: 0 0 0.5em; }
+.sheet-root .cf-md-preview .cf-md-p:last-child { margin-bottom: 0; }
+.sheet-root .cf-md-preview .cf-md-list { margin: 0 0 0.5em; padding-left: 1.25em; }
+.sheet-root .cf-md-preview .cf-md-list:last-child { margin-bottom: 0; }
+.sheet-root .cf-md-preview .cf-md-list li { margin: 0.15em 0; }
+.sheet-root .cf-md-empty { opacity: 0.6; font-style: italic; }
+.sheet-root .cf-md-textarea { width: 100%; font: inherit; }
+.sheet-root .cf-md-toggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.sheet-root .cf-md-toggle:hover { opacity: 1; }
