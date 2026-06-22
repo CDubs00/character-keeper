@@ -38,6 +38,23 @@ Just know the design decisions are mine.
 - **Installable (PWA).** Manifest and icons, so it can live as an app on your
   phone or desktop.
 
+#### Deasktop
+<img width="1463" height="838" alt="character List Desktop" src="https://github.com/user-attachments/assets/5148a4fb-bc4c-4185-b38e-796207fb4d5a" />
+<img width="1458" height="828" alt="New Character Desktop" src="https://github.com/user-attachments/assets/34119896-a3b2-4243-9700-ba690d2d1e20" />
+<img width="1470" height="843" alt="Dice Roller Desktop" src="https://github.com/user-attachments/assets/7cf3e52e-2992-4e08-95fb-6f99bf6f896d" />
+<img width="509" height="819" alt="admin panel" src="https://github.com/user-attachments/assets/d26e9616-5956-48cf-9c1f-d3b66ee50a82" />
+<img width="512" height="587" alt="Archive Modal" src="https://github.com/user-attachments/assets/5ac71d41-1f00-4baf-9e83-1951a323fb08" />
+<img width="329" height="844" alt="Dice Log" src="https://github.com/user-attachments/assets/9251ebda-d6a7-41fc-b5fb-937f1facac7f" />
+
+
+
+#### Mobile
+<img width="645" height="1325" alt="sign in mobile" src="https://github.com/user-attachments/assets/3b816020-1b4b-41d3-82d2-144908a74962" />
+<img width="645" height="1398" alt="Character List mobile" src="https://github.com/user-attachments/assets/d00f12cf-e181-40c2-b13b-8c70d27c7065" />
+<img width="1290" height="2657" alt="Dice Roll mobile" src="https://github.com/user-attachments/assets/7fbdc268-ea64-4ab4-bd61-f868dc5453a6" />
+
+
+
 ## Quick start
 
 ```bash
