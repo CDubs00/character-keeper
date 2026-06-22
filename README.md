@@ -38,7 +38,7 @@ Just know the design decisions are mine.
 - **Installable (PWA).** Manifest and icons, so it can live as an app on your
   phone or desktop.
 
-#### Deasktop
+#### Desktop
 <img width="1463" height="838" alt="character List Desktop" src="https://github.com/user-attachments/assets/5148a4fb-bc4c-4185-b38e-796207fb4d5a" />
 <img width="1458" height="828" alt="New Character Desktop" src="https://github.com/user-attachments/assets/34119896-a3b2-4243-9700-ba690d2d1e20" />
 <img width="1470" height="843" alt="Dice Roller Desktop" src="https://github.com/user-attachments/assets/7cf3e52e-2992-4e08-95fb-6f99bf6f896d" />
