@@ -149,4 +149,5 @@ vite.config.ts.timestamp-*
 frontend/build/
 
 # macOS
-.DS_StoreMEMORY.md
+.DS_Store
+.DS_Store
