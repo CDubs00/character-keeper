@@ -1,210 +1,405 @@
 /* ============================================================
-   Risus: The Anything RPG — theme
-   Scoped to .risus-sheet so it never leaks into the core app.
-   Palette + radius are variables so a future theme can override.
+   Risus: The Anything RPG — modern dark theme
+   ------------------------------------------------------------
+   Every selector is scoped under .risus-sheet so the theme can
+   never leak into app chrome (the renderer injects this CSS
+   document-wide while the sheet is open). .risus-sheet paints a
+   full-bleed dark background and centres content in .risus-inner,
+   so the sheet reads as one cohesive dark page instead of white
+   cards floating on the app's dark gutters.
+
+   Sizing/radius/weight were dialled back ~5% from the first cut
+   to take the edge off the "cartoon" feel: tighter corners,
+   1px borders, lighter display weights. Tune the whole sheet
+   from the variable block below.
    ============================================================ */
 
 .risus-sheet {
-  --risus-accent: #7b2d8e;        /* RISUS violet */
-  --risus-accent-soft: #f3e9f6;
-  --risus-ink: #1d1320;
-  --risus-line: #7b2d8e;
-  --risus-radius: 16px;
-  --risus-gap: 14px;
+  /* surfaces — none of these are pure black */
+  --pg:           #181221;   /* page background */
+  --surface:      #221a30;   /* cards / pools / panels */
+  --surface-2:    #281e38;   /* raised inner panels */
+  --field:        #2c2139;   /* input fill — lifted off the card so fields read */
+  --field-focus:  #342748;
 
-  color: var(--risus-ink);
+  /* lines */
+  --bd:           #352845;   /* card / panel borders */
+  --bd-soft:      #2c2138;   /* hairlines */
+  --field-bd:     #3d2e54;
+
+  /* violet accent ramp */
+  --accent:       #b07ae0;   /* primary accent (labels, headings) */
+  --accent-bright:#c79bef;   /* hover / bright text */
+  --accent-strong:#8a3fb0;   /* button fills */
+  --accent-soft:  rgba(176,122,224,0.14);  /* chip / focus wash */
+
+  /* ink — soft lavender-white, deliberately not #fff on near-black */
+  --ink:          #ece5f4;
+  --ink-dim:      #b6a6c9;
+  --label:        #c79bef;
+
+  --danger:       #d4738f;
+  --danger-soft:  rgba(212,115,143,0.16);
+
+  --radius:       11px;
+  --radius-sm:    8px;
+  --gap:          13px;
+  --dice-box-h:   40px;      /* shared height: cliché dice box + the remove glyph */
+
+  color: var(--ink);
+  background: var(--pg);
   font-family: "Quicksand", "Nunito", system-ui, sans-serif;
+  padding: clamp(15px, 3.3vw, 28px);
+  border-radius: 14px;
+  min-height: 100%;
+}
+
+.risus-sheet * { box-sizing: border-box; }
+
+.risus-sheet .risus-inner {
+  max-width: 900px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--risus-gap);
-  max-width: 920px;
-  margin: 0 auto;
+  gap: var(--gap);
 }
 
-/* ---- shared box look ---- */
-.risus-sheet .field,
-.risus-sheet .pool,
-.risus-sheet .cliche,
-.risus-sheet .textblock,
-.risus-sheet .risus-pools {
-  border: 2.5px solid var(--risus-line);
-  border-radius: var(--risus-radius);
-  padding: 10px 12px;
-  background: #fff;
-}
-
+/* ---- shared field / label look ---- */
 .risus-sheet label {
   display: block;
   font-weight: 700;
-  font-size: 0.8rem;
-  letter-spacing: 0.02em;
-  color: var(--risus-accent);
-  margin-bottom: 3px;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--label);
+  margin-bottom: 4px;
 }
 
 .risus-sheet input,
-.risus-sheet textarea {
+.risus-sheet textarea,
+.risus-sheet select {
   width: 100%;
-  border: none;
-  background: transparent;
   font: inherit;
-  color: var(--risus-ink);
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--field-bd);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
   outline: none;
+  transition: border-color 0.15s, background 0.15s;
 }
+.risus-sheet input::placeholder,
+.risus-sheet textarea::placeholder { color: var(--ink-dim); opacity: 0.6; }
+
 .risus-sheet input:focus,
-.risus-sheet textarea:focus {
-  background: var(--risus-accent-soft);
-  border-radius: 6px;
+.risus-sheet textarea:focus,
+.risus-sheet select:focus {
+  border-color: var(--accent);
+  background: var(--field-focus);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
-/* ---- header ---- */
-.risus-header {
+/* strip the spinner on number inputs for a cleaner look */
+.risus-sheet input[type="number"] { -moz-appearance: textfield; }
+.risus-sheet input[type="number"]::-webkit-outer-spin-button,
+.risus-sheet input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* date input — keep its picker icon visible on a dark field */
+.risus-sheet input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.8); cursor: pointer; }
+
+/* the .field / .pool / .textblock card shell */
+.risus-sheet .field,
+.risus-sheet .pool,
+.risus-sheet .textblock {
+  background: var(--surface);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+/* fields inside a session card already sit on a panel — no double shell */
+.risus-sheet .session-grid .field {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* ---- header / brand ---- */
+.risus-sheet .risus-header {
   display: flex;
   justify-content: space-between;
-  align-items: stretch;
-  gap: var(--risus-gap);
+  align-items: flex-end;
+  gap: var(--gap);
   flex-wrap: wrap;
 }
-.risus-brand {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.risus-logo {
-  font-size: 2.6rem;
-  font-weight: 800;
-  color: var(--risus-accent);
-  line-height: 1;
-}
-.risus-sub {
+.risus-sheet .risus-brand { display: flex; flex-direction: column; line-height: 1; }
+.risus-sheet .risus-logo {
+  font-size: 2.25rem;
   font-weight: 700;
-  color: var(--risus-accent);
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  line-height: 0.95;
 }
-.risus-pools {
+.risus-sheet .risus-sub {
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  color: var(--accent-bright);
+  margin-top: 2px;
+}
+.risus-sheet .risus-pools { display: flex; gap: var(--gap); }
+.risus-sheet .risus-pools .pool { min-width: 132px; }
+
+/* tracker bubbles — base look. Per-pool row counts are set below. */
+.risus-sheet .tracker {
   display: flex;
-  gap: var(--risus-gap);
+  flex-wrap: wrap;
+  gap: 6px;
+  width: fit-content;
 }
-.risus-pools .pool {
-  min-width: 160px;
+.risus-sheet .tracker-bubble {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 1.25px solid var(--accent);
+  cursor: pointer;
+  transition: background 0.12s, transform 0.08s;
+}
+.risus-sheet .tracker-bubble:hover { transform: scale(1.12); }
+.risus-sheet .tracker-bubble.filled { background: var(--accent); }
+
+/* Fixed-column grids so the pools wrap into tidy rows. Because the tracker
+   widget fills bubbles 1..N in DOM (reading) order, wrapping at 6 / 5 makes
+   clicking "row 2, slot 3" land on bubble 9 / 8 and fill everything up to it
+   — row 1 full plus the start of row 2 — for free. */
+.risus-sheet .pool--lucky .tracker { display: grid; grid-template-columns: repeat(6, 14px); }
+.risus-sheet .pool--quest .tracker { display: grid; grid-template-columns: repeat(5, 14px); }
+
+/* ---- tabs (override the app's zero-specificity chrome) ---- */
+.risus-sheet .cf-tab-bar {
+  border-bottom: 1px solid var(--bd);
+  margin-bottom: var(--gap);
+  gap: 4px;
+}
+.risus-sheet .cf-tab-btn {
+  color: var(--ink-dim);
+  border-bottom: 2px solid transparent;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.risus-sheet .cf-tab-btn:hover { color: var(--accent-bright); background: var(--accent-soft); }
+.risus-sheet .cf-tab-btn.active {
+  color: var(--accent-bright);
+  border-bottom-color: var(--accent);
 }
 
-/* ---- identity ---- */
-.risus-identity {
+/* ---- identity (portrait + fields) ---- */
+.risus-sheet .risus-identity {
+  display: grid;
+  grid-template-columns: 114px 1fr;
+  gap: var(--gap);
+  align-items: stretch;
+}
+.risus-sheet .portrait-cell {
+  background: var(--surface);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+}
+.risus-sheet .portrait-area {
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.risus-sheet .portrait-area img { width: 100%; height: 100%; object-fit: cover; }
+.risus-sheet .portrait-placeholder {
+  color: var(--ink-dim);
+  font-size: 0.7rem;
+  text-align: center;
+  padding: 8px;
+}
+.risus-sheet .identity-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--risus-gap);
+  gap: var(--gap);
+  align-content: start;
 }
-.risus-identity .field-wide {
-  grid-column: 1 / -1;
-}
-.risus-sheet .campaign-tag {
-  display: inline-block;
-  font-weight: 600;
-  color: var(--risus-ink);
+.risus-sheet .identity-fields .field-wide { grid-column: 1 / -1; }
+
+/* the readonly character name reads as a value, not an input */
+.risus-sheet [data-type="readonly-name"],
+.risus-sheet .readonly-name {
+  font-weight: 700;
+  color: var(--accent-bright);
+  padding: 7px 2px 2px;
 }
 
 /* ---- cliché section ---- */
-.section-head {
+.risus-sheet .section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin: 5px 2px 2px;
 }
-.section-head h2 {
+.risus-sheet .section-head h2 {
   margin: 0;
-  color: var(--risus-accent);
-  font-size: 1.3rem;
+  color: var(--accent);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
-.cliche-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--risus-gap);
-  margin-top: 8px;
-}
-.cliche {
-  display: flex;
-  gap: var(--risus-gap);
-  align-items: stretch;
-}
-.cliche-main { flex: 1; }
-.cliche-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-.primary-flag {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0;
-  white-space: nowrap;
-  font-size: 0.7rem;
-}
-.primary-flag input { width: auto; }
-.cliche-name { font-weight: 700; font-size: 1.05rem; }
-.tools-label { margin: 0; }
-.cliche-tools { flex: 1; }
+.risus-sheet .cliche-list { display: flex; flex-direction: column; gap: var(--gap); margin-top: 8px; }
 
-.cliche-dice {
+.risus-sheet .cliche {
   display: flex;
+  gap: var(--gap);
   align-items: center;
-  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius);
+  padding: 12px 14px;
 }
-.dice-box {
-  width: 52px;
+.risus-sheet .cliche-main { flex: 1; min-width: 0; }
+.risus-sheet .cliche-row { display: flex; align-items: center; gap: 10px; }
+.risus-sheet .cliche-row.tools-row { margin-top: 8px; }
+
+.risus-sheet .primary-flag {
+  width: auto;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.risus-sheet .cliche-name { font-weight: 700; font-size: 1rem; }
+.risus-sheet .tools-label { margin: 0; flex-shrink: 0; align-self: center; }
+.risus-sheet .cliche-tools { flex: 1; }
+
+/* dice cluster: labels stack over the boxes; bottoms align so the borderless
+   remove glyph lands centred on the number boxes (it shares their height). */
+.risus-sheet .cliche-dice { display: flex; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+.risus-sheet .dice-box { width: 46px; text-align: center; }
+.risus-sheet .dice-box label { font-size: 0.6rem; margin-bottom: 3px; }
+.risus-sheet .dice-box input {
   text-align: center;
-}
-.dice-box label {
-  font-size: 0.65rem;
-  margin: 0;
-}
-.dice-box input {
-  text-align: center;
-  font-size: 1.3rem;
-  font-weight: 800;
-  border: 2px solid var(--risus-line);
-  border-radius: 10px;
-  padding: 4px 0;
+  height: var(--dice-box-h);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--accent-bright);
+  background: var(--accent-soft);
+  border: 1.25px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 0;
 }
 
 /* ---- buttons ---- */
-.btn-add {
-  background: var(--risus-accent);
+.risus-sheet .btn-add {
+  background: var(--accent-strong);
   color: #fff;
   border: none;
-  border-radius: 999px;
-  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  padding: 6px 13px;
   font-weight: 700;
+  font-size: 0.8rem;
   cursor: pointer;
+  transition: filter 0.12s;
 }
-.btn-add:hover { filter: brightness(1.1); }
-.btn-remove {
+.risus-sheet .btn-add:hover { filter: brightness(1.15); }
+
+/* cliché remove: borderless glyph, centred to the dice boxes, highlight on hover */
+.risus-sheet .btn-remove {
   background: transparent;
-  border: 2px solid #c44;
-  color: #c44;
-  border-radius: 8px;
-  width: 28px;
-  height: 28px;
+  border: none;
+  color: var(--danger);
+  height: var(--dice-box-h);
+  width: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
   cursor: pointer;
-  font-weight: 700;
-  align-self: center;
+  border-radius: var(--radius-sm);
+  transition: background 0.12s, color 0.12s;
 }
-.btn-remove:hover { background: #c44; color: #fff; }
+.risus-sheet .btn-remove:hover { background: var(--danger-soft); color: #e592a8; }
+
+/* session delete keeps a clear outlined-button look (it's a labelled action,
+   not an inline glyph) */
+.risus-sheet .session-rm {
+  width: auto;
+  height: auto;
+  padding: 6px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+.risus-sheet .session-rm:hover { background: var(--danger); color: #fff; }
 
 /* ---- inventory / notes ---- */
-.risus-bottom {
+.risus-sheet .risus-bottom {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--risus-gap);
+  gap: var(--gap);
+  margin-top: 6px;
 }
-.risus-bottom textarea { resize: vertical; }
+.risus-sheet .risus-bottom textarea { resize: vertical; min-height: 142px; }
 
-/* ---- mobile ---- */
-@media (max-width: 640px) {
-  .risus-identity,
-  .risus-bottom { grid-template-columns: 1fr; }
-  .risus-header { flex-direction: column; }
-  .risus-pools { flex-direction: column; }
-  .cliche { flex-direction: column; }
-  .cliche-dice { justify-content: flex-start; }
+/* ---- sessions ---- */
+.risus-sheet .session-list { display: flex; flex-direction: column; gap: var(--gap); margin-top: 8px; }
+.risus-sheet .session-card {
+  background: var(--surface);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius);
+  padding: 11px 14px;
+}
+/* override the app's collapsible header for the dark theme */
+.risus-sheet .cf-collapsible-header {
+  color: var(--accent-bright);
+  font-weight: 700;
+  font-size: 0.98rem;
+  letter-spacing: 0.02em;
+  padding: 2px 0;
+}
+.risus-sheet .cf-collapsible-body { padding-top: 12px; }
+
+.risus-sheet .session-grid {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 12px var(--gap);
+  align-items: start;
+}
+.risus-sheet .session-grid .span-all { grid-column: 1 / -1; }
+.risus-sheet .session-grid .date-field { grid-column: 1; }
+.risus-sheet .session-grid textarea { resize: vertical; }
+
+.risus-sheet .session-footer { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+/* ============================================================
+   Responsive — container queries (the renderer sets .sheet-root
+   as the query container) with a media fallback. Single column
+   when the sheet gets narrow; clichés stack their dice below.
+   ============================================================ */
+@container sheet (max-width: 680px) {
+  .risus-sheet .risus-identity { grid-template-columns: 1fr; }
+  .risus-sheet .portrait-cell { max-width: 150px; }
+  .risus-sheet .identity-fields,
+  .risus-sheet .risus-bottom,
+  .risus-sheet .session-grid { grid-template-columns: 1fr; }
+  .risus-sheet .risus-header { flex-direction: column; align-items: flex-start; }
+  .risus-sheet .risus-pools { width: 100%; }
+  .risus-sheet .cliche { flex-direction: column; align-items: stretch; }
+  .risus-sheet .cliche-dice { justify-content: flex-start; }
+}
+
+@media (max-width: 680px) {
+  .risus-sheet .risus-identity,
+  .risus-sheet .identity-fields,
+  .risus-sheet .risus-bottom,
+  .risus-sheet .session-grid { grid-template-columns: 1fr; }
+  .risus-sheet .risus-header { flex-direction: column; align-items: flex-start; }
+  .risus-sheet .cliche { flex-direction: column; align-items: stretch; }
 }

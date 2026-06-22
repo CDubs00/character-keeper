@@ -10,8 +10,22 @@
     "questingDice": 0,
     "cliches":      [ { "name": "", "tools": "", "max": 4, "current": 4, "primary": "yes" } ],
     "inventory":    "",
-    "notes":        ""
+    "notes":        "",
+    "sessions":     []
   },
 
-  "emptyCliche": { "name": "", "tools": "", "max": 1, "current": 1, "primary": "no" }
+  "emptyCliche":  { "name": "", "tools": "", "max": 1, "current": 1, "primary": "no" },
+
+  "sidecarPaths": [ "sessions" ],
+  "searchable": {
+    "hook":              "Hook",
+    "cliches.name":           "Cliche",
+    "religion":          "Religion",
+    "inventory":         "Inventory",
+    "notes":             "Notes"
+  },
+  "dice": {
+  "available": ["d6"]
+  },
+  "emptySession": { "date": "@today", "notes": "", "npcs": "", "loot": "" }
 }

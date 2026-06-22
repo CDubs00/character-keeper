@@ -3,93 +3,159 @@
 <head><meta charset="UTF-8" /><link rel="stylesheet" href="theme.css" /></head>
 <body>
 
+  <!-- ============================================================
+       Risus: The Anything RPG — modern dark sheet
+       .risus-sheet is the scoped wrapper (theme.css only ever
+       reaches inside it). It paints the full sheet background so
+       nothing floats on the app chrome. .risus-inner is the
+       centred content column.
+       ============================================================ -->
   <div class="risus-sheet">
+    <div class="risus-inner">
 
-    <!-- ===== Header ===== -->
-    <header class="risus-header">
-      <div class="risus-brand">
-        <span class="risus-logo">RISUS</span>
-        <span class="risus-sub">The Anything RPG</span>
-      </div>
-
-      <div class="risus-pools">
-        <div class="pool">
-          <label>Lucky Shots</label>
-          <div data-bind="luckyShots" data-type="tracker" data-max="6"></div>
+      <!-- ===== Brand + resource pools (always visible) ===== -->
+      <header class="risus-header">
+        <div class="risus-brand">
+          <span class="risus-logo">RISUS</span>
+          <span class="risus-sub">The Anything RPG</span>
         </div>
-        <div class="pool">
-          <label>Questing Dice</label>
-          <div data-bind="questingDice" data-type="tracker" data-max="15"></div>
+
+        <div class="risus-pools">
+          <div class="pool pool--lucky">
+            <label>Lucky Shots</label>
+            <div data-bind="luckyShots" data-type="tracker" data-max="12"></div>
+          </div>
+          <div class="pool pool--quest">
+            <label>Questing Dice</label>
+            <div data-bind="questingDice" data-type="tracker" data-max="15"></div>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
 
-    <!-- ===== Identity ===== -->
-    <section class="risus-identity">
-      <div class="field">
-        <label>Player Name</label>
-        <input type="text" data-bind="playerName" />
-      </div>
-      <div class="field">
-        <label>Character Name</label>
-        <div data-bind="info.name" data-type="readonly-name"></div>
-      </div>
-      <div class="field field-wide">
-        <label>Hook</label>
-        <input type="text" data-bind="hook" />
-      </div>
-    </section>
+      <!-- ===== Tabs ===== -->
+      <div data-tabs class="risus-tabs">
 
-    <!-- ===== Cliches ===== -->
-    <section class="risus-cliches">
-      <div class="section-head">
-        <h2>Cliches</h2>
-        <button class="btn-add" data-action="add" data-target="cliches">+ Add Cliche</button>
-      </div>
+        <!-- ----------------------------------------------------------
+             TAB 1 — Character
+             ---------------------------------------------------------- -->
+        <div data-tab="Character">
 
-      <div class="cliche-list" data-list="cliches">
-        <div class="cliche" data-item>
-          <div class="cliche-main">
-            <div class="cliche-row">
-              <select class="primary-flag" data-bind="primary">
-                <option value="yes">Primary</option>
-                <option value="no">&mdash;</option>
-              </select>
-              <input type="text" data-bind="name" class="cliche-name" placeholder="Cliche (e.g. Grizzled Ranger)" />
+          <!-- Identity: portrait + the three name/hook fields -->
+          <section class="risus-identity">
+            <div class="portrait-cell">
+              <div data-type="portrait"></div>
             </div>
-            <div class="cliche-row">
-              <label class="tools-label">Tools of the Trade</label>
-              <input type="text" data-bind="tools" class="cliche-tools" placeholder="Bow, traps, knowledge of the wild..." />
+            <div class="identity-fields">
+              <div class="field">
+                <label>Character Name</label>
+                <div data-bind="info.name" data-type="readonly-name"></div>
+              </div>
+              <div class="field">
+                <label>Player Name</label>
+                <input type="text" data-bind="playerName" />
+              </div>
+              <div class="field field-wide">
+                <label>Hook</label>
+                <input type="text" data-bind="hook" placeholder="The one-line reason this character matters" />
+              </div>
+            </div>
+          </section>
+
+          <!-- Clichés -->
+          <section class="risus-cliches">
+            <div class="section-head">
+              <h2>Clich&eacute;s</h2>
+              <button class="btn-add" data-action="add" data-target="cliches">+ Add Clich&eacute;</button>
+            </div>
+
+            <div class="cliche-list" data-list="cliches">
+              <div class="cliche" data-item>
+                <div class="cliche-main">
+                  <div class="cliche-row">
+                    <select class="primary-flag" data-bind="primary" title="Primary clich&eacute;">
+                      <option value="yes">&#9733; Primary</option>
+                      <option value="no">Secondary</option>
+                    </select>
+                    <input type="text" data-bind="name" class="cliche-name" placeholder="Clich&eacute; (e.g. Grizzled Ranger)" />
+                  </div>
+                  <div class="cliche-row tools-row">
+                    <label class="tools-label">Tools of the Trade</label>
+                    <input type="text" data-bind="tools" class="cliche-tools" placeholder="Bow, traps, knowledge of the wild&hellip;" />
+                  </div>
+                </div>
+
+                <div class="cliche-dice">
+                  <div class="dice-box">
+                    <label>Dice</label>
+                    <input type="number" data-bind="max" min="0" max="10" />
+                  </div>
+                  <div class="dice-box">
+                    <label>Now</label>
+                    <input type="number" data-bind="current" min="0" max="10" />
+                  </div>
+                  <button class="btn-remove" data-action="remove" title="Remove">&#10005;</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Inventory / Notes -->
+          <section class="risus-bottom">
+            <div class="textblock">
+              <label>Inventory</label>
+              <textarea data-bind="inventory" rows="10" placeholder="What's in the pack, on the belt, up the sleeve&hellip;"></textarea>
+            </div>
+            <div class="textblock">
+              <label>Notes</label>
+              <textarea data-bind="notes" rows="10" placeholder="Salt, backstory, allegiances, loose threads&hellip;"></textarea>
+            </div>
+          </section>
+
+        </div>
+
+        <!-- ----------------------------------------------------------
+             TAB 2 — Sessions  (sidecar list; skipped on export)
+             ---------------------------------------------------------- -->
+        <div data-tab="Sessions" data-export-skip>
+
+          <div class="section-head">
+            <h2>Session Log</h2>
+            <button class="btn-add" data-action="add" data-target="sessions" data-insert="prepend">+ New Session</button>
+          </div>
+
+          <div class="session-list" data-list="sessions">
+            <div class="session-card" data-item data-collapse-after="0">
+              <div data-collapsible="Session" data-collapsible-bind="date">
+                <div class="session-grid">
+                  <div class="field date-field">
+                    <label>Date</label>
+                    <input type="date" data-bind="date" />
+                  </div>
+                  <div class="field span-all">
+                    <label>What happened</label>
+                    <textarea data-bind="notes" rows="6" placeholder="The story of the session&hellip;"></textarea>
+                  </div>
+                  <div class="field">
+                    <label>People &amp; Places</label>
+                    <textarea data-bind="npcs" rows="4" placeholder="Who did we meet? Friend or foe?"></textarea>
+                  </div>
+                  <div class="field">
+                    <label>Loot &amp; Salt</label>
+                    <textarea data-bind="loot" rows="4" placeholder="Coin, spice, items, who's carrying what&hellip;"></textarea>
+                  </div>
+                </div>
+                <div class="session-footer">
+                  <button class="btn-remove session-rm" data-action="remove">&#10005; Delete Session</button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="cliche-dice">
-            <div class="dice-box">
-              <label>max</label>
-              <input type="number" data-bind="max" min="0" max="10" />
-            </div>
-            <div class="dice-box">
-              <label>current</label>
-              <input type="number" data-bind="current" min="0" max="10" />
-            </div>
-            <button class="btn-remove" data-action="remove" title="Remove">&#10005;</button>
-          </div>
         </div>
-      </div>
-    </section>
 
-    <!-- ===== Inventory / Notes ===== -->
-    <section class="risus-bottom">
-      <div class="textblock">
-        <label>Inventory</label>
-        <textarea data-bind="inventory" rows="10"></textarea>
       </div>
-      <div class="textblock">
-        <label>Notes</label>
-        <textarea data-bind="notes" rows="10"></textarea>
-      </div>
-    </section>
 
+    </div>
   </div>
 
 </body>
