@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useContext, createContext } from 'react';
 import { createPortal } from 'react-dom';
+import DOMPurify from 'dompurify';
 import { api } from '../api';
 
 const DIE_VALUES = ['d4', 'd6', 'd8', 'd10', 'd12'];
@@ -711,11 +712,21 @@ function wrapIfTable(tag, element, key) {
   return React.createElement('div', { key, className: 'cf-table-scroll' }, element);
 }
 
+// Reserved namespace for the engine's own data-* attributes. Anything in this
+// set is engine plumbing the bundle author can put in their HTML to wire data
+// into the renderer; everything else under data-* is dropped by buildProps as
+// "not the engine's, not allowlisted, treat as hostile" (see HARDENING comment
+// at buildProps). Add new entries here when a new engine feature uses a data-*
+// attribute — they're load-bearing.
 const ENGINE_ATTRS = new Set([
   'data-bind','data-type','data-list','data-item','data-action','data-target','data-max','data-attr-source',
   'data-tabs','data-tab','data-ref','data-ref-key','data-insert','data-collapsible-bind','data-form-title','data-title',
   'data-max-font','data-min-font','data-max-bind','data-min',
   'data-md-group','data-md-toggle',
+  // Engine attributes that were used by bundles but missed in the original set.
+  // Pre-hardening these "worked" because buildProps passed everything through;
+  // once buildProps enforces an allowlist, anything not here is dropped.
+  'data-collapsible','data-collapse-after','data-export-skip',
 ]);
 
 // ── Parse a CSS string into a React style object ─────────────────────────────
@@ -731,21 +742,241 @@ function parseCssString(css) {
   return style;
 }
 
-function buildProps(attrs, key, stripList = [], extra = {}) {
+// ── Attribute allowlist ─────────────────────────────────────────────────────
+// Bundle hardening #1: buildProps used to forward every attribute it didn't
+// explicitly recognise, which let a hostile bundle set on*, formaction,
+// srcdoc, or any other prop and have React wire it as a live event handler /
+// dangerous DOM property. This set of allowlists inverts the default to
+// "drop unless known-safe":
+//
+//  - GLOBAL_HTML_ATTRS:        safe on any element (id, class, title, aria-*…)
+//  - TAG_SPECIFIC_HTML_ATTRS:  per-tag extras (href on <a>, src on <img>…)
+//  - ENGINE_ATTRS (above):     the engine's reserved data-* namespace.
+//
+// Anything not on a list is dropped silently in production. In development,
+// dropped attributes are reported as a console.warn so a bundle that uses
+// something we missed will show itself the first time the sheet renders —
+// instead of mysteriously breaking. Event-handler props (on*) are dropped
+// unconditionally, regardless of tag, because they're the prize attacker
+// outcome and never legitimate in static bundle HTML.
+
+// Safe on every HTML element. NO style here — style is parsed by parseCssString
+// before being handed to React, and the at-rule sanitization in #3 will sit on
+// top of that. NO event handlers — see below.
+const GLOBAL_HTML_ATTRS = new Set([
+  'id','class','title','lang','dir','hidden','tabindex','role','style',
+  // aria-* is whitelisted by a startsWith check in the loop (it's a family,
+  // not a fixed name); listing them all individually would be brittle.
+]);
+
+// Per-tag extras. Tags not in this map get only GLOBAL_HTML_ATTRS + ENGINE_ATTRS.
+const TAG_SPECIFIC_HTML_ATTRS = {
+  a:        new Set(['href','target','rel','download','hreflang']),
+  img:      new Set(['src','alt','width','height','loading','decoding','srcset','sizes']),
+  input:    new Set(['type','name','value','placeholder','min','max','step','checked',
+                     'disabled','readonly','required','maxlength','minlength','pattern',
+                     'autocomplete','inputmode','list','size']),
+  textarea: new Set(['name','placeholder','rows','cols','wrap','disabled','readonly',
+                     'required','maxlength','minlength','autocomplete']),
+  select:   new Set(['name','multiple','size','disabled','required','autocomplete']),
+  option:   new Set(['value','selected','disabled','label']),
+  optgroup: new Set(['label','disabled']),
+  label:    new Set(['for']),
+  button:   new Set(['type','disabled','name','value']),
+  // Tables — colSpan/rowSpan/scope/headers cover everything bundles need.
+  table:    new Set([]),
+  thead:    new Set([]), tbody: new Set([]), tfoot: new Set([]),
+  tr:       new Set([]),
+  th:       new Set(['colspan','rowspan','scope','headers','abbr']),
+  td:       new Set(['colspan','rowspan','scope','headers']),
+  // Media: not currently used by any shipped bundle, but cheap to permit.
+  // src on these still has to pass the off-origin check (hardening #4); the
+  // allowlist alone doesn't make off-origin loads safe.
+  video:    new Set(['src','poster','width','height','controls','preload','muted','loop','autoplay','playsinline']),
+  audio:    new Set(['src','controls','preload','muted','loop','autoplay']),
+  source:   new Set(['src','srcset','sizes','type','media']),
+  track:    new Set(['src','srclang','label','kind','default']),
+  // Form is deliberately empty: no action/method/enctype — bundles must not be
+  // submitting to anywhere.
+  form:     new Set([]),
+};
+
+// Attributes that React/the renderer renames as it forwards them to JSX.
+// Keep this list aligned with the loop below.
+const REACT_ATTR_RENAMES = {
+  'class':    'className',
+  'for':      'htmlFor',
+  'tabindex': 'tabIndex',
+  'colspan':  'colSpan',
+  'rowspan':  'rowSpan',
+  'readonly': 'readOnly',
+  'maxlength':'maxLength',
+  'minlength':'minLength',
+  'autocomplete':'autoComplete',
+  'inputmode':'inputMode',
+  'crossorigin':'crossOrigin',
+  'srclang':  'srcLang',
+  'playsinline':'playsInline',
+};
+
+// Dev-only warning so an attribute used by an existing bundle that we didn't
+// list (e.g. on a system we didn't audit) surfaces immediately instead of
+// breaking silently. Production stays quiet.
+const __isDev = typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production';
+
+// ── DOMPurify: pre-walker HTML sanitization ────────────────────────────────
+// Bundle hardening #2: before bundle HTML reaches DOMParser, run it through
+// DOMPurify to strip dangerous structure that buildProps can't catch at the
+// attribute level — <script>, <iframe>, <object>, <embed>, <link>,
+// <meta>, malformed elements, namespace-confusion tricks, encoded XSS, etc.
+//
+// Two-wall defence: DOMPurify is wall #1 (structural — what tags can exist),
+// buildProps is wall #2 (per-attribute — what makes it onto a React element).
+// Each layer is configured from the same allowlist constants above, so there's
+// only ever one source of truth.
+//
+// The ALLOWED_ATTR list here is intentionally PERMISSIVE (the union of every
+// per-tag allowlist) — DOMPurify decides per-element only "is this attribute
+// shaped like something we'd ever permit". Per-tag enforcement happens in
+// buildProps, which sees the tag and rejects an attribute on the wrong element.
+// Listing them all here keeps DOMPurify from stripping legitimate attrs before
+// buildProps even runs.
+//
+// Notably permitted (DOMPurify defaults forbid them):
+//   - data-* (via ALLOW_DATA_ATTR: true) — buildProps drops non-engine data-*
+//   - 'style'                              — parseCssString in buildProps splits
+//                                            it into an object; CSS-level sanit-
+//                                            isation is hardening #3.
+//
+// FORCE_BODY:true keeps bundle HTML fragments intact (no <html>/<head>/<body>
+// rearrangement). KEEP_CONTENT:true preserves the children of any stripped
+// element so a malicious <script> wrapper doesn't take the real content with it.
+const ALLOWED_BUNDLE_TAGS = [
+  // Structure
+  'div','span','p','section','article','aside','nav','header','footer','main',
+  // Headings
+  'h1','h2','h3','h4','h5','h6',
+  // Inline text
+  'a','b','i','em','strong','u','s','small','code','pre','kbd','samp','var','mark',
+  'sub','sup','time','abbr','cite','q','blockquote','figure','figcaption',
+  // Lists
+  'ul','ol','li','dl','dt','dd',
+  // Tables
+  'table','thead','tbody','tfoot','tr','th','td','caption','colgroup','col',
+  // Forms (engine reads bindings off these — see TAG_SPECIFIC_HTML_ATTRS)
+  'form','fieldset','legend','label','input','textarea','select','option','optgroup','button',
+  // Media (currently unused by shipped bundles but in TAG_SPECIFIC_HTML_ATTRS)
+  'img','video','audio','source','track',
+  // Misc
+  'br','hr','details','summary',
+];
+
+// Union of every per-tag set, plus the globals. DOMPurify uppercases internally
+// but accepts lowercase in config — keep them lowercase to match our other lists.
+const ALLOWED_BUNDLE_ATTRS = (() => {
+  const all = new Set(GLOBAL_HTML_ATTRS);
+  for (const tagSet of Object.values(TAG_SPECIFIC_HTML_ATTRS)) {
+    for (const attr of tagSet) all.add(attr);
+  }
+  return Array.from(all);
+})();
+
+// Built once at module load — DOMPurify accepts a fresh config per sanitize()
+// call, but constructing it once is cheaper. The config object itself is not
+// shared across sanitize() calls thanks to the spread; this avoids the
+// "leaky config" class of issues DOMPurify has had historically.
+const DOMPURIFY_CONFIG = Object.freeze({
+  ALLOWED_TAGS:   ALLOWED_BUNDLE_TAGS,
+  ALLOWED_ATTR:   ALLOWED_BUNDLE_ATTRS,
+  ALLOW_DATA_ATTR: true,    // engine attrs are data-*; buildProps filters which
+  ALLOW_ARIA_ATTR: true,
+  FORCE_BODY:     true,
+  KEEP_CONTENT:   true,
+  // Explicitly forbid script + dangerous embeds even if they accidentally
+  // end up on a tag allowlist somehow — DOMPurify removes these regardless
+  // of ALLOWED_TAGS, but listing them documents intent.
+  FORBID_TAGS:    ['script','style','iframe','object','embed','link','meta','base'],
+  // No event handlers, ever. Same intent as the "name.startsWith('on')" drop
+  // in buildProps — two walls.
+  FORBID_ATTR:    ['onerror','onload','onclick','onmouseover','onfocus','onblur',
+                   'onchange','onsubmit','oninput','onanimationstart','onanimationend',
+                   'ontransitionend','onauxclick','onpointerdown','onpointerup',
+                   'formaction','autofocus'],
+});
+
+// Sanitize a bundle's sheet.html before parsing.
+// Pass through DOMPurify with a fresh spread of the config (defence against
+// any future hook-pollution / setConfig leakage). The result is a clean HTML
+// string suitable for DOMParser.
+function sanitizeBundleHtml(html) {
+  return DOMPurify.sanitize(html, { ...DOMPURIFY_CONFIG });
+}
+
+// ── buildProps ──────────────────────────────────────────────────────────────
+// Translate a node's raw attribute bag into React props for the chosen tag.
+//
+//   tag       lowercase tag name. Drives the per-tag allowlist.
+//   attrs    {name: value} from getAttrs(node). Strings only.
+//   key      React key for the resulting element.
+//   stripList Additional names to drop unconditionally (defence-in-depth: used
+//             when the callsite has already consumed an attr — e.g. <a> falling
+//             back to <span> wants 'href' gone even though it's allowlisted).
+//   extra    Props the callsite controls and forwards as-is (value/onChange/
+//             disabled/etc). Wins over anything coming from attrs.
+function buildProps(tag, attrs, key, stripList = [], extra = {}) {
   const props = { key };
   const stripSet = new Set(stripList);
-  for (const [name, value] of Object.entries(attrs)) {
-    if (stripSet.has(name)) continue;
+  const tagAllow = TAG_SPECIFIC_HTML_ATTRS[tag] || null;
+  const dropped = __isDev ? [] : null;
+
+  for (const [rawName, value] of Object.entries(attrs)) {
+    if (stripSet.has(rawName)) continue;
+    const name = rawName.toLowerCase();
+
+    // 1. Event handlers (on*) — dropped unconditionally. This is the core fix.
+    //    onMouseOver, onError, onLoad, onAnimationStart, formaction-as-handler,
+    //    all of them. Never legitimate in static bundle HTML.
+    if (name.startsWith('on')) { if (dropped) dropped.push(rawName); continue; }
+
+    // 2. data-* — only ENGINE_ATTRS allowed. Custom data-* dropped.
+    //    Rationale: a bundle could otherwise inject data-* the app doesn't
+    //    own and confuse downstream code (or be the target of a future CSS
+    //    selector that styles app chrome based on bundle-controlled data).
     if (name.startsWith('data-')) {
-      if (!ENGINE_ATTRS.has(name)) props[name] = value;
+      // Engine reads ENGINE_ATTRS through dedicated branches before buildProps
+      // is even called, so they don't need to land on the React element — but
+      // some (data-ref, data-export-skip, data-collapse-after) are read off
+      // the DOM later via getAttribute. Forwarding them keeps that working.
+      if (ENGINE_ATTRS.has(name)) { props[name] = value; continue; }
+      if (dropped) dropped.push(rawName);
       continue;
     }
-    if (name === 'style')    { props.style = parseCssString(value); continue; }
-    if (name === 'class')    { props.className = value; continue; }
-    if (name === 'for')      { props.htmlFor   = value; continue; }
-    if (name === 'tabindex') { props.tabIndex  = value; continue; }
-    props[name] = value;
+
+    // 3. aria-* — entire family allowed (accessibility, safe).
+    if (name.startsWith('aria-')) { props[name] = value; continue; }
+
+    // 4. style — parsed into an object before reaching React. parseCssString
+    //    splits on ';' and ':' which neutralises most embedded-script tricks;
+    //    a CSS-level sanitizer comes in hardening #3.
+    if (name === 'style') { props.style = parseCssString(value); continue; }
+
+    // 5. Renames (class→className, for→htmlFor, tabindex→tabIndex, …).
+    //    Only renamed if the source name is on an allowlist for this tag.
+    if (GLOBAL_HTML_ATTRS.has(name) || (tagAllow && tagAllow.has(name))) {
+      const reactName = REACT_ATTR_RENAMES[name] || name;
+      props[reactName] = value;
+      continue;
+    }
+
+    // 6. Anything else — dropped.
+    if (dropped) dropped.push(rawName);
   }
+
+  if (dropped && dropped.length) {
+    // eslint-disable-next-line no-console
+    console.warn(`[SheetRenderer] dropped ${dropped.length} attr(s) on <${tag}>:`, dropped);
+  }
+
   return { ...props, ...extra };
 }
 
@@ -783,7 +1014,7 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
     // Tabs flagged data-export-skip render normally live but are omitted from
     // the export render. Bundle-driven — the renderer doesn't know which tab.
     const skipExport = tabKids.map((n) => n.hasAttribute('data-export-skip'));
-    const hostProps = buildProps(attrs, key, []);
+    const hostProps = buildProps('div', attrs, key, []);
     return React.createElement(Tabs, { ...hostProps, labels, panels, panelClasses, exportMode: sheetExportMode, skipExport });
   }
 
@@ -794,7 +1025,7 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
     const kids = Array.from(node.childNodes)
       .map((child, i) => renderNodeFull(child, char, updateRef, schemaRef, charId, readOnly, i))
       .filter(Boolean);
-    const hostProps = buildProps(attrs, key,
+    const hostProps = buildProps('div', attrs, key,
       ['data-collapsible','data-collapsed','data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
     return React.createElement(Collapsible, { ...hostProps, title, defaultOpen, exportMode: sheetExportMode }, ...kids);
   }
@@ -808,14 +1039,14 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
     const kids = Array.from(node.childNodes)
       .map((child, i) => renderNodeFull(child, char, updateRef, schemaRef, charId, readOnly, i))
       .filter(Boolean);
-    const hostProps = buildProps(attrs, key, ['data-md-group']);
+    const hostProps = buildProps('div', attrs, key, ['data-md-group']);
     return React.createElement(MarkdownGroup, hostProps, ...kids);
   }
 
   // The shared toggle button for a markdown group. Renders nothing when not
   // inside a data-md-group, so a stray attribute doesn't drop a dead button.
   if (attrs['data-md-toggle'] !== undefined) {
-    const hostProps = buildProps(attrs, key, ['data-md-toggle']);
+    const hostProps = buildProps('button', attrs, key, ['data-md-toggle']);
     return React.createElement(MarkdownGroupToggle, hostProps);
   }
 
@@ -829,7 +1060,7 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
     const kids = Array.from(node.childNodes)
       .map((child, i) => renderNodeFull(child, char, updateRef, schemaRef, charId, readOnly, i))
       .filter(Boolean);
-    const props = buildProps(attrs, key, []);
+    const props = buildProps(tag, attrs, key, []);
     const info = refText
       ? React.createElement(InfoButton, {
           key: '__info',
@@ -849,11 +1080,11 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
       .filter(Boolean);
     const external = isExternalHref(attrs.href);
     if (external && !allowExternalLinks) {
-      const spanProps = buildProps(attrs, key,
+      const spanProps = buildProps('span', attrs, key,
         ['href','target','rel','data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
       return React.createElement('span', spanProps, ...kids);
     }
-    const linkProps = buildProps(attrs, key,
+    const linkProps = buildProps('a', attrs, key,
       ['data-bind','data-type','data-list','data-item','data-action','data-target','data-max'],
       external ? { target: '_blank', rel: 'noopener noreferrer' } : {});
     return React.createElement('a', linkProps, ...kids);
@@ -880,7 +1111,7 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
       return renderListItem(templateNode, item, itemUpdate, schemaRef, charId, i);
     }).filter(Boolean);
 
-    const containerProps = buildProps(attrs, key, ['data-list','data-item','data-action','data-target','data-bind','data-type','data-max']);
+    const containerProps = buildProps(tag, attrs, key, ['data-list','data-item','data-action','data-target','data-bind','data-type','data-max']);
     return wrapIfTable(tag, React.createElement(tag, containerProps, ...itemElements), key);
   }
 
@@ -890,7 +1121,7 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
   // new items at the top of the list.
   if (dataAction === 'add' && dataTarget) {
     if (sheetReadOnly) return null;
-    const { key: _hostKey, ...hostProps } = buildProps(attrs, key, ['data-action','data-target','data-insert','data-form-title']);
+    const { key: _hostKey, ...hostProps } = buildProps('button', attrs, key, ['data-action','data-target','data-insert','data-form-title']);
     return React.createElement(AddItemButton, {
       key,
       label: node.textContent,
@@ -937,7 +1168,7 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
       const val = e.target.type === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value;
       updateRef.current(setPath(char, bindPath, val));
     };
-    const inputProps = buildProps(attrs, key, ['data-bind', 'data-type'], { value, onChange, disabled: sheetReadOnly });
+    const inputProps = buildProps('input', attrs, key, ['data-bind', 'data-type'], { value, onChange, disabled: sheetReadOnly });
     return React.createElement(AutofitInput, {
       ...inputProps,
       maxFont: parseFloat(attrs['data-max-font']) || 18,
@@ -977,7 +1208,7 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
         return React.createElement('div', { key, className: 'cf-export-text' }, renderMarkdown(value) ?? '');
       }
       const mdOnChange = sheetReadOnly ? () => {} : (e) => updateRef.current(setPath(char, bindPath, e.target.value));
-      const inputProps = buildProps(attrs, key, ['data-bind','data-type'], {
+      const inputProps = buildProps(tag, attrs, key, ['data-bind','data-type'], {
         value: value ?? '',
         onChange: mdOnChange,
         disabled: sheetReadOnly,
@@ -997,7 +1228,7 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
       return React.createElement('div', { key, className: 'cf-export-text' }, renderMarkdown(value) ?? '');
     }
     if (['input', 'select', 'textarea'].includes(tag)) {
-      const inputProps = buildProps(attrs, key, ['data-bind','data-type'], { value, onChange, disabled: sheetReadOnly });
+      const inputProps = buildProps(tag, attrs, key, ['data-bind','data-type'], { value, onChange, disabled: sheetReadOnly });
       if (tag === 'select') {
         const options = Array.from(node.childNodes)
           .filter((n) => n.nodeType === 1 && n.tagName?.toLowerCase() === 'option')
@@ -1013,7 +1244,7 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
     .map((child, i) => renderNodeFull(child, char, updateRef, schemaRef, charId, readOnly, i))
     .filter(Boolean);
 
-  const props = buildProps(attrs, key, ['data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
+  const props = buildProps(tag, attrs, key, ['data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
   if (['br','hr'].includes(tag)) return React.createElement(tag, props);
   return wrapIfTable(tag, React.createElement(tag, props, ...children), key);
 }
@@ -1027,7 +1258,7 @@ function renderListItem(templateNode, item, itemUpdate, schemaRef, charId, key) 
   const children = Array.from(templateNode.childNodes)
     .map((child, i) => renderItemChildFull(child, item, itemUpdate, schemaRef, charId, i, key, collapseAfter))
     .filter(Boolean);
-  const props = buildProps(attrs, key, ['data-item','data-list','data-bind','data-type','data-action','data-target','data-max','data-collapse-after']);
+  const props = buildProps(tag, attrs, key, ['data-item','data-list','data-bind','data-type','data-action','data-target','data-max','data-collapse-after']);
   return React.createElement(tag, props, ...children);
 }
 
@@ -1065,7 +1296,7 @@ function renderItemChildFull(node, item, itemUpdate, schemaRef, charId, key, ite
     const kids = Array.from(node.childNodes)
       .map((child, i) => renderItemChildFull(child, item, itemUpdate, schemaRef, charId, i, itemIndex, collapseAfter))
       .filter(Boolean);
-    const hostProps = buildProps(attrs, key,
+    const hostProps = buildProps('div', attrs, key,
       ['data-collapsible','data-collapsed','data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
     return React.createElement(Collapsible, { ...hostProps, title, defaultOpen, exportMode: sheetExportMode}, ...kids);
   }
@@ -1075,11 +1306,11 @@ function renderItemChildFull(node, item, itemUpdate, schemaRef, charId, key, ite
     const kids = Array.from(node.childNodes)
       .map((child, i) => renderItemChildFull(child, item, itemUpdate, schemaRef, charId, i, itemIndex, collapseAfter))
       .filter(Boolean);
-    const hostProps = buildProps(attrs, key, ['data-md-group']);
+    const hostProps = buildProps('div', attrs, key, ['data-md-group']);
     return React.createElement(MarkdownGroup, hostProps, ...kids);
   }
   if (attrs['data-md-toggle'] !== undefined) {
-    const hostProps = buildProps(attrs, key, ['data-md-toggle']);
+    const hostProps = buildProps('button', attrs, key, ['data-md-toggle']);
     return React.createElement(MarkdownGroupToggle, hostProps);
   }
 
@@ -1106,7 +1337,7 @@ function renderItemChildFull(node, item, itemUpdate, schemaRef, charId, key, ite
 
   if (dataAction === 'remove') {
     if (sheetReadOnly) return null;
-    const props = buildProps(attrs, key, ['data-action'], {
+    const props = buildProps('button', attrs, key, ['data-action'], {
       onClick: () => itemUpdate(null),
       type: 'button',
     });
@@ -1138,7 +1369,7 @@ function renderItemChildFull(node, item, itemUpdate, schemaRef, charId, key, ite
         return React.createElement('div', { key, className: 'cf-export-text' }, renderMarkdown(value) ?? '');
       }
       const mdOnChange = sheetReadOnly ? () => {} : (e) => itemUpdate({ [bindPath]: e.target.value });
-      const inputProps = buildProps(attrs, key, ['data-bind','data-type'], {
+      const inputProps = buildProps(tag, attrs, key, ['data-bind','data-type'], {
         value: value ?? '',
         onChange: mdOnChange,
         disabled: sheetReadOnly,
@@ -1157,7 +1388,7 @@ function renderItemChildFull(node, item, itemUpdate, schemaRef, charId, key, ite
       return React.createElement('div', { key, className: 'cf-export-text' }, renderMarkdown(value) ?? '');
     }
     if (['input','select','textarea'].includes(tag)) {
-      const inputProps = buildProps(attrs, key, ['data-bind','data-type'], { value, onChange, disabled: sheetReadOnly });
+      const inputProps = buildProps(tag, attrs, key, ['data-bind','data-type'], { value, onChange, disabled: sheetReadOnly });
       if (tag === 'select') {
         const options = Array.from(node.childNodes)
           .filter((n) => n.nodeType === 1 && n.tagName?.toLowerCase() === 'option')
@@ -1172,7 +1403,7 @@ function renderItemChildFull(node, item, itemUpdate, schemaRef, charId, key, ite
     .map((child, i) => renderItemChildFull(child, item, itemUpdate, schemaRef, charId, i))
     .filter(Boolean);
 
-  const props = buildProps(attrs, key, ['data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
+  const props = buildProps(tag, attrs, key, ['data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
   if (['br','hr'].includes(tag)) return React.createElement(tag, props);
   return wrapIfTable(tag, React.createElement(tag, props, ...children), key);
 }
@@ -1237,7 +1468,14 @@ export default function SheetRenderer({ char, update, charId, readOnly = false, 
         styleRef.current = style;
 
         schemaRef.current = schema;
-        setHtmlString(html.split('%ASSETS%').join(assetBase));
+        // Sanitize bundle HTML through DOMPurify BEFORE parsing & rendering.
+        // We do this once at fetch time (not on every render) — the result is
+        // a static string that DOMParser will then walk normally. %ASSETS% has
+        // already been resolved so DOMPurify sees the final URLs (relevant for
+        // hardening #4 when src filtering lands, since same-origin /api/sheets/
+        // paths will look distinct from off-origin URLs).
+        const cleanHtml = sanitizeBundleHtml(html.split('%ASSETS%').join(assetBase));
+        setHtmlString(cleanHtml);
       })
       .catch((e) => setError(e.message));
 

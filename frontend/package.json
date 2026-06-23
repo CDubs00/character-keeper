@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@3d-dice/dice-box": "^1.1.4",
+    "dompurify": "^3.4.11",
     "fflate": "^0.8.3",
     "html-to-image": "^1.11.13",
     "react": "^18.2.0",

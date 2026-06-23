@@ -597,7 +597,21 @@ app.set('trust proxy', 2);
 // scriptSrc equivalent, so that's an acceptable resting state.
 const cspEnforce      = process.env.CSP_ENFORCE === 'true';
 const cspInlineScript = process.env.CSP_INLINE_SCRIPT !== 'false'; // default: allow
-const scriptSrc       = cspInlineScript ? ["'self'", "'unsafe-inline'"] : ["'self'"];
+// scriptSrc components:
+//   'self'              — our own bundled JS
+//   'unsafe-inline'     — gated by CSP_INLINE_SCRIPT (CRA's inlined runtime chunk)
+//   'wasm-unsafe-eval'  — required by dice-box. It uses ammo.js, a WebAssembly
+//                         port of Bullet physics, and WebAssembly compilation is
+//                         governed by script-src. This is NOT the broad
+//                         'unsafe-eval': it permits WASM module compilation only,
+//                         not eval()/new Function(). The wasm sandbox is its own
+//                         thing — no direct DOM access. Adding it is the
+//                         standard way to allow WebAssembly under a strict CSP.
+const scriptSrc       = [
+  "'self'",
+  ...(cspInlineScript ? ["'unsafe-inline'"] : []),
+  "'wasm-unsafe-eval'",
+];
 
 // CSP is REPORT-ONLY by default: this app uses React inline styles, an injected
 // <style> element for bundle themes, and (from CRA) an inlined runtime script
@@ -618,6 +632,12 @@ app.use(helmet({
       objectSrc:      ["'none'"],
       baseUri:        ["'self'"],
       frameAncestors: ["'none'"],
+      // dice-box instantiates its physics worker from a blob: URL (a Web Worker
+      // bundled into the JS and spawned via URL.createObjectURL). Without an
+      // explicit worker-src, the browser falls back to script-src, which doesn't
+      // permit blob:. Allow blob: workers from our own origin only — narrow
+      // surface, breaks dice rolls without it once CSP is enforced.
+      workerSrc:      ["'self'", "blob:"],
     },
   },
   // HSTS only matters over HTTPS (prod, behind NPM). Browsers ignore it on
