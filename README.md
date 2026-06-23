@@ -1,5 +1,7 @@
 # Character Keeper
 
+![icon](<frontend/public/icon-512.png>)
+
 A self-hosted, system (TTRPG) agnostic, character sheet app for tabletop RPGs. You run it on your own server, you keep your own data (plain JSON files, no database), and you add new game systems by dropping in a folder instead of waiting for me to write code for them.
 
 I built this for my own table and put it out there in case it's useful to anyone else who'd rather host their own thing than rent a SaaS character vault. It's aimed at personal and smallish group use, a handful of playersn and a few GMs.
@@ -39,20 +41,23 @@ Just know the design decisions are mine.
   phone or desktop.
 
 #### Desktop
-<img width="1463" height="838" alt="character List Desktop" src="https://github.com/user-attachments/assets/5148a4fb-bc4c-4185-b38e-796207fb4d5a" />
-<img width="1458" height="828" alt="New Character Desktop" src="https://github.com/user-attachments/assets/34119896-a3b2-4243-9700-ba690d2d1e20" />
-<img width="1470" height="843" alt="Dice Roller Desktop" src="https://github.com/user-attachments/assets/7cf3e52e-2992-4e08-95fb-6f99bf6f896d" />
-<img width="509" height="819" alt="admin panel" src="https://github.com/user-attachments/assets/d26e9616-5956-48cf-9c1f-d3b66ee50a82" />
-<img width="512" height="587" alt="Archive Modal" src="https://github.com/user-attachments/assets/5ac71d41-1f00-4baf-9e83-1951a323fb08" />
-<img width="329" height="844" alt="Dice Log" src="https://github.com/user-attachments/assets/9251ebda-d6a7-41fc-b5fb-937f1facac7f" />
-
-
+![Desktop Character List](<screenshots/Desktop - Character List.png>)
+![Create Character](<screenshots/Desktop - Create Character.png>)
+![Desktop Dice](<screenshots/Desktop - Dice Roll.png>)
 
 #### Mobile
-<img width="645" height="1325" alt="sign in mobile" src="https://github.com/user-attachments/assets/3b816020-1b4b-41d3-82d2-144908a74962" />
-<img width="645" height="1398" alt="Character List mobile" src="https://github.com/user-attachments/assets/d00f12cf-e181-40c2-b13b-8c70d27c7065" />
-<img width="1290" height="2657" alt="Dice Roll mobile" src="https://github.com/user-attachments/assets/7fbdc268-ea64-4ab4-bd61-f868dc5453a6" />
+![Mobile Sign In](<screenshots/Mobile - Sign In.PNG>)
+![Mobile Dice](<screenshots/Mobile - Dice Roll.jpg>)
+![Mobile Character List](<screenshots/Mobile - Character List.PNG>)
 
+#### Others
+![Bundle Managment](<screenshots/Admin Modal - Bundle Managment.png>)
+![Settings](<screenshots/Admin Modal - Settings.png>)
+![Users](<screenshots/Admin Modal - Users.png>)
+![Archive](<screenshots/Archive Modal.png>)
+![Dice Roll Log](<screenshots/Dice Roll Log.png>)
+![Search](screenshots/Search.png)
+![User Appearance](<screenshots/User Apperance Modal.png>)
 
 
 ## Quick start
@@ -244,9 +249,9 @@ Roughly in order, dependency-permitting:
 - **Security Audit** - confirm every mutating route rejects unauthenticated and cross-user requests, and lock that down with automated tests so it can't quietly regress.
 - **More Bundles** — candidates I'd like to do next include D&D 3e, D&D 5e 2024, and Star Wars Saga Edition.
 - **Mobile layout polish** — single-column, collapsible sections on small screens.
-- **Standalone HTML export** — bake a character plus its template into one
-  portable file you can open without the app. 
+- **Standalone HTML export** — bake a character plus its template into one portable file you can open without the app. 
 - **Attachment txt/md Editing** - allow inbrowser editting of .md and .txt attachments. 
+- **Character Ownership transfers** - Allow a user to transfer a character then own to another User/Admin. 
 - **Admin login-history log** - Build in a viewable log for the admin to monitor session logins from users and shares.
 - **User Die Size Setting Override** - Allow users to set thier own die size on a scale. 
 - **Add d2/coin-flip** - Dice-Box currently doesnt have a d2 or Coin render so I am attempting on figuring out how to add one. 
