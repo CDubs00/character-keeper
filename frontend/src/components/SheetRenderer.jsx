@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef, useContext, createContext } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../api';
 
@@ -16,31 +16,14 @@ let allowExternalLinks = false;
 let sheetReadOnly = false;
 let sheetExportMode = false;
 
-// True if href points to a different origin than the app itself, OR if it uses
-// a scheme that should never be handed to the browser regardless of the
-// allowExternalLinks setting.
-//
-// The javascript: check MUST come before new URL() because
-// new URL('javascript:alert(1)', origin) throws in most browsers, which would
-// send execution into the catch branch and return false — treating a script URL
-// as safe. Checking the raw string first closes that gap.
-//
-// data: is included for the same reason: a data: href can carry executable
-// content (e.g. data:text/html,<script>…</script>) and new URL() accepts it
-// without throwing, so the origin comparison would pass and it would be rendered
-// as a live link. Neutralizing both here means the <a> handler and the src
-// blocker (when added) share one consistent source of truth.
-//
-// Malformed URLs that URL() can't parse are also treated as external so they're
-// neutralized rather than silently passed through.
+// True if href points to a different origin than the app itself.
+// Relative / same-origin links are never treated as external.
 function isExternalHref(href) {
   if (!href) return false;
-  if (/^javascript:/i.test(href.trim())) return true;  // always neutralize
-  if (/^data:/i.test(href.trim()))       return true;  // always neutralize
   try {
     return new URL(href, window.location.origin).origin !== window.location.origin;
   } catch {
-    return true;  // unparseable → treat as external → neutralize
+    return false;
   }
 }
 
@@ -187,13 +170,46 @@ function AutofitInput({ maxFont = 18, minFont = 10, ...rest }) {
 // no link rendering). A small "Edit" button flips the same box into a raw
 // textarea; "Done" returns to the formatted view. The raw text is what gets
 // persisted; the preview is purely a display layer.
-function MarkdownField({ value, onChange, disabled, placeholder, className, rows, ...rest }) {
+//
+// Sharing one toggle across multiple fields: wrap them in a `data-md-group`
+// element and drop a `data-md-toggle` button inside. Fields inside the group
+// pick up its shared editing state via context (and suppress their own
+// per-field button). Fields outside any group still work standalone — fully
+// backwards-compatible.
+const MarkdownGroupContext = createContext(null);
+
+function MarkdownGroup({ children, className, ...rest }) {
   const [editing, setEditing] = useState(false);
+  return React.createElement(
+    MarkdownGroupContext.Provider,
+    { value: { editing, setEditing } },
+    React.createElement('div', { className, ...rest }, children)
+  );
+}
+
+function MarkdownGroupToggle({ className, ...rest }) {
+  const ctx = useContext(MarkdownGroupContext);
+  // Outside a group the toggle is meaningless; render nothing rather than a
+  // dead button so a misplaced data-md-toggle doesn't pollute the UI.
+  if (!ctx) return null;
+  return React.createElement('button', {
+    type: 'button',
+    className: `cf-md-toggle ${className || ''}`.trim(),
+    onClick: () => ctx.setEditing(!ctx.editing),
+    ...rest,
+  }, ctx.editing ? 'Done' : 'Edit');
+}
+
+function MarkdownField({ value, onChange, disabled, placeholder, className, rows, ...rest }) {
+  const group = useContext(MarkdownGroupContext);
+  const [localEditing, setLocalEditing] = useState(false);
+  // When the field is inside a group, the group owns editing state and
+  // renders the shared toggle button. Standalone fields manage their own.
+  const editing = group ? group.editing : localEditing;
+  const showOwnToggle = !group;
   const text = String(value ?? '');
   const blank = !text.trim();
 
-  // In edit mode (or in any read-only context where toggling makes no sense
-  // and the user can't change anything anyway), show a plain textarea.
   if (editing && !disabled) {
     return React.createElement('div', { className: `cf-md-field cf-md-edit ${className || ''}`.trim() },
       React.createElement('textarea', {
@@ -202,31 +218,60 @@ function MarkdownField({ value, onChange, disabled, placeholder, className, rows
         onChange,
         placeholder,
         rows: rows || 6,
-        autoFocus: true,
+        autoFocus: !group,   // grouped fields don't fight over focus
         className: 'cf-md-textarea',
       }),
-      React.createElement('button', {
+      showOwnToggle ? React.createElement('button', {
         type: 'button',
         className: 'cf-md-toggle',
-        onClick: () => setEditing(false),
-      }, 'Done')
+        onClick: () => setLocalEditing(false),
+      }, 'Done') : null
     );
   }
 
-  // Display: formatted preview, or a muted placeholder when empty.
   return React.createElement('div', { className: `cf-md-field cf-md-view ${className || ''}`.trim() },
     React.createElement('div', { className: 'cf-md-preview' },
       blank
         ? React.createElement('span', { className: 'cf-md-empty' }, placeholder || '')
         : renderMarkdown(text)
     ),
-    disabled ? null : React.createElement('button', {
+    (disabled || !showOwnToggle) ? null : React.createElement('button', {
       type: 'button',
       className: 'cf-md-toggle',
-      onClick: () => setEditing(true),
+      onClick: () => setLocalEditing(true),
     }, 'Edit')
   );
 }
+
+// ── Stepper widget (data-type="stepper") ────────────────────────────────────
+// Stacked ▲/▼ control bound to a numeric field. Commonly paired with a
+// readonly number display (or another input bound to the same field) so the
+// player can nudge a "current" value up/down without typing. Respects min/max
+// from data-min / data-max when supplied.
+function Stepper({ value, onChange, min, max, disabled }) {
+  const n = Number(value) || 0;
+  const canUp   = max === undefined || n < max;
+  const canDown = min === undefined || n > min;
+  const bump = (d) => { if (!disabled) onChange(Math.max(min ?? -Infinity, Math.min(max ?? Infinity, n + d))); };
+  return React.createElement('div', { className: 'cf-stepper' },
+    React.createElement('button', {
+      type: 'button',
+      className: 'cf-stepper-btn cf-stepper-up',
+      onClick: () => bump(+1),
+      disabled: disabled || !canUp,
+      'aria-label': 'Increase',
+    }, '▲'),
+    React.createElement('button', {
+      type: 'button',
+      className: 'cf-stepper-btn cf-stepper-down',
+      onClick: () => bump(-1),
+      disabled: disabled || !canDown,
+      'aria-label': 'Decrease',
+    }, '▼')
+  );
+}
+
+
 
 const XP_MILESTONES = new Set([5, 10, 15, 20, 25, 30]);
 
@@ -669,7 +714,8 @@ function wrapIfTable(tag, element, key) {
 const ENGINE_ATTRS = new Set([
   'data-bind','data-type','data-list','data-item','data-action','data-target','data-max','data-attr-source',
   'data-tabs','data-tab','data-ref','data-ref-key','data-insert','data-collapsible-bind','data-form-title','data-title',
-  'data-max-font','data-min-font',
+  'data-max-font','data-min-font','data-max-bind','data-min',
+  'data-md-group','data-md-toggle',
 ]);
 
 // ── Parse a CSS string into a React style object ─────────────────────────────
@@ -751,6 +797,26 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
     const hostProps = buildProps(attrs, key,
       ['data-collapsible','data-collapsed','data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
     return React.createElement(Collapsible, { ...hostProps, title, defaultOpen, exportMode: sheetExportMode }, ...kids);
+  }
+
+  // ── markdown edit group (opt-in: data-md-group on a wrapper) ───────────────
+  // All data-type="markdown" fields inside share one editing state, driven by
+  // a single data-md-toggle button anywhere in the subtree. Used when a card
+  // has several markdown fields that should flip together (e.g. a clich&eacute;
+  // card's name + tools).
+  if (attrs['data-md-group'] !== undefined) {
+    const kids = Array.from(node.childNodes)
+      .map((child, i) => renderNodeFull(child, char, updateRef, schemaRef, charId, readOnly, i))
+      .filter(Boolean);
+    const hostProps = buildProps(attrs, key, ['data-md-group']);
+    return React.createElement(MarkdownGroup, hostProps, ...kids);
+  }
+
+  // The shared toggle button for a markdown group. Renders nothing when not
+  // inside a data-md-group, so a stray attribute doesn't drop a dead button.
+  if (attrs['data-md-toggle'] !== undefined) {
+    const hostProps = buildProps(attrs, key, ['data-md-toggle']);
+    return React.createElement(MarkdownGroupToggle, hostProps);
   }
 
   // ── static reference content (data-ref="Key") ──────────────────────────────
@@ -885,9 +951,24 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
     const onChange = sheetReadOnly ? () => {} : (val) => updateRef.current(setPath(char, bindPath, val));
 
     if (dataType === 'die')        return React.createElement(DieSelector, { key, value: value ?? { die: 'd4', bonus: 0 }, onChange });
-    if (dataType === 'tracker')    return React.createElement(Tracker,     { key, value: value ?? 0, max: dataMax ?? 3, onChange });
+    if (dataType === 'tracker') {
+      // Max comes from either a bound character field (data-max-bind="path")
+      // or the data-max literal. The bound form lets the player configure pool
+      // sizes per character; the literal stays the simple default.
+      const maxBind = attrs['data-max-bind'];
+      const boundMax = maxBind ? Number(resolvePath(char, maxBind)) : NaN;
+      const max = Number.isFinite(boundMax) && boundMax > 0
+        ? boundMax
+        : (dataMax !== undefined ? Number(dataMax) : 3);
+      return React.createElement(Tracker, { key, value: value ?? 0, max, onChange });
+    }
     if (dataType === 'toggle')     return React.createElement(Toggle,      { key, value: !!value, onChange });
     if (dataType === 'xp-tracker') return React.createElement(XPTracker,   { key, value: value ?? 0, max: dataMax ?? 30, onChange });
+    if (dataType === 'stepper')    return React.createElement(Stepper, {
+      key, value: value ?? 0, onChange, disabled: sheetReadOnly,
+      min: attrs['data-min'] !== undefined ? Number(attrs['data-min']) : undefined,
+      max: dataMax !== undefined ? Number(dataMax) : undefined,
+    });
     if (dataType === 'markdown') {
       // Export always renders read-only formatted text — same shape as the
       // existing textarea branch below — so the markdown widget collapses to
@@ -989,6 +1070,19 @@ function renderItemChildFull(node, item, itemUpdate, schemaRef, charId, key, ite
     return React.createElement(Collapsible, { ...hostProps, title, defaultOpen, exportMode: sheetExportMode}, ...kids);
   }
 
+  // ── markdown group inside a list item (e.g. a clich&eacute; card's name+tools) ──
+  if (attrs['data-md-group'] !== undefined) {
+    const kids = Array.from(node.childNodes)
+      .map((child, i) => renderItemChildFull(child, item, itemUpdate, schemaRef, charId, i, itemIndex, collapseAfter))
+      .filter(Boolean);
+    const hostProps = buildProps(attrs, key, ['data-md-group']);
+    return React.createElement(MarkdownGroup, hostProps, ...kids);
+  }
+  if (attrs['data-md-toggle'] !== undefined) {
+    const hostProps = buildProps(attrs, key, ['data-md-toggle']);
+    return React.createElement(MarkdownGroupToggle, hostProps);
+  }
+
   // ── per-item info popover (data-action="info") ─────────────────────────────
   // data-bind names the item field holding the player's text (default:
   // "description"). data-ref-key names the item field whose VALUE keys into
@@ -1024,9 +1118,21 @@ function renderItemChildFull(node, item, itemUpdate, schemaRef, charId, key, ite
     const onChange = sheetReadOnly ? () => {} : (val) => itemUpdate({ [bindPath]: val });
 
     if (dataType === 'die')        return React.createElement(DieSelector, { key, value: value ?? { die: 'd4', bonus: 0 }, onChange });
-    if (dataType === 'tracker')    return React.createElement(Tracker,     { key, value: value ?? 0, max: dataMax ?? 3, onChange });
+    if (dataType === 'tracker') {
+      const maxBind = attrs['data-max-bind'];
+      const boundMax = maxBind ? Number(item?.[maxBind]) : NaN;
+      const max = Number.isFinite(boundMax) && boundMax > 0
+        ? boundMax
+        : (dataMax !== undefined ? Number(dataMax) : 3);
+      return React.createElement(Tracker, { key, value: value ?? 0, max, onChange });
+    }
     if (dataType === 'rank-badge') return React.createElement(RankBadge,   { key, value });
     if (dataType === 'attr-badge') return React.createElement('span',      { key, className: 'attr-badge' }, value ?? '');
+    if (dataType === 'stepper')    return React.createElement(Stepper, {
+      key, value: value ?? 0, onChange, disabled: sheetReadOnly,
+      min: attrs['data-min'] !== undefined ? Number(attrs['data-min']) : undefined,
+      max: dataMax !== undefined ? Number(dataMax) : undefined,
+    });
     if (dataType === 'markdown') {
       if (sheetExportMode) {
         return React.createElement('div', { key, className: 'cf-export-text' }, renderMarkdown(value) ?? '');

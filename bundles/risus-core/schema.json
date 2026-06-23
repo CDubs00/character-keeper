@@ -3,15 +3,17 @@
   "system": "risus-core",
 
   "emptyCharacter": {
-    "info":         { "name": "" },
-    "playerName":   "",
-    "hooks":        [],
-    "luckyShots":   0,
-    "questingDice": 0,
-    "cliches":      [ { "name": "", "tools": "", "max": 4, "current": 4, "primary": "yes" } ],
-    "inventory":    "",
-    "notes":        "",
-    "sessions":     []
+    "info":           { "name": "" },
+    "playerName":     "",
+    "hooks":          [],
+    "luckyShots":     0,
+    "luckyShotsMax":  12,
+    "questingDice":   0,
+    "questingDiceMax":15,
+    "cliches":        [ { "name": "", "tools": "", "max": 4, "current": 4, "primary": "yes" } ],
+    "inventory":      "",
+    "notes":          "",
+    "sessions":       []
   },
 
   "emptyCliche":  { "name": "", "tools": "", "max": 1, "current": 1, "primary": "no" },

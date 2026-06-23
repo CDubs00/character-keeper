@@ -22,12 +22,18 @@
 
         <div class="risus-pools">
           <div class="pool pool--lucky">
-            <label>Lucky Shots</label>
-            <div data-bind="luckyShots" data-type="tracker" data-max="12"></div>
+            <div class="pool-head">
+              <label>Lucky Shots</label>
+              <input type="number" data-bind="luckyShotsMax" min="1" max="30" class="pool-max" title="Pool size" />
+            </div>
+            <div data-bind="luckyShots" data-type="tracker" data-max-bind="luckyShotsMax"></div>
           </div>
           <div class="pool pool--quest">
-            <label>Questing Dice</label>
-            <div data-bind="questingDice" data-type="tracker" data-max="15"></div>
+            <div class="pool-head">
+              <label>Questing Dice</label>
+              <input type="number" data-bind="questingDiceMax" min="1" max="30" class="pool-max" title="Pool size" />
+            </div>
+            <div data-bind="questingDice" data-type="tracker" data-max-bind="questingDiceMax"></div>
           </div>
         </div>
       </header>
@@ -66,30 +72,40 @@
 
             <div class="cliche-list" data-list="cliches">
               <div class="cliche" data-item>
-                <div class="cliche-main">
-                  <div class="cliche-row">
-                    <select class="primary-flag" data-bind="primary" title="Primary clich&eacute;">
-                      <option value="yes">&#9733; Primary</option>
-                      <option value="no">Secondary</option>
-                    </select>
-                    <input type="text" data-bind="name" data-type="autofit" data-max-font="16" data-min-font="11" class="cliche-name" placeholder="Clich&eacute; (e.g. Grizzled Ranger)" />
-                  </div>
-                  <div class="cliche-row tools-row">
-                    <label class="tools-label">Tools of the Trade</label>
-                    <textarea data-bind="tools" class="cliche-tools" rows="1" placeholder="Bow, traps, knowledge of the wild&hellip;"></textarea>
-                  </div>
-                </div>
+                <div class="cliche-inner" data-md-group>
 
-                <div class="cliche-dice">
-                  <div class="dice-box">
-                    <label>Dice</label>
-                    <input type="number" data-bind="max" min="0" max="10" />
+                  <!-- top row: primary pill + name (markdown) + dice column -->
+                  <div class="cliche-top">
+                    <div class="cliche-name-row">
+                      <select class="primary-flag" data-bind="primary" title="Primary clich&eacute;">
+                        <option value="yes">&#9733; Primary</option>
+                        <option value="no">Secondary</option>
+                      </select>
+                      <textarea data-bind="name" data-type="markdown" rows="1" class="cliche-name" placeholder="Clich&eacute; (e.g. Grizzled Ranger)"></textarea>
+                    </div>
+                    <div class="cliche-dice">
+                      <div class="dice-box">
+                        <label>Dice</label>
+                        <input type="number" data-bind="max" min="0" max="10" />
+                      </div>
+                      <div class="dice-box">
+                        <label>Now</label>
+                        <input type="number" data-bind="current" min="0" max="10" />
+                      </div>
+                      <div data-bind="current" data-type="stepper" data-min="0" data-max="10" class="cliche-stepper"></div>
+                      <button class="btn-remove" data-action="remove" title="Remove">&#10005;</button>
+                    </div>
                   </div>
-                  <div class="dice-box">
-                    <label>Now</label>
-                    <input type="number" data-bind="current" min="0" max="10" />
+
+                  <!-- bottom row: tools label + tools field + EDIT button -->
+                  <div class="cliche-bottom">
+                    <div class="cliche-tools-block">
+                      <label class="tools-label">Tools of the Trade</label>
+                      <textarea data-bind="tools" data-type="markdown" rows="2" class="cliche-tools" placeholder="Bow, traps, knowledge of the wild&hellip;"></textarea>
+                    </div>
+                    <button data-md-toggle class="cliche-edit-btn"></button>
                   </div>
-                  <button class="btn-remove" data-action="remove" title="Remove">&#10005;</button>
+
                 </div>
               </div>
             </div>
@@ -115,13 +131,12 @@
             <div class="textblock">
               <label>Inventory</label>
               <textarea data-bind="inventory" data-type="markdown" rows="10" placeholder="What's in the pack, on the belt, up the sleeve&hellip;"></textarea>
-              <div class="md-hint">Markdown: <code>**bold**</code>, <code>*italic*</code>, <code>- bullets</code></div>
             </div>
             <div class="textblock">
               <label>Notes</label>
               <textarea data-bind="notes" data-type="markdown" rows="10" placeholder="Salt, backstory, allegiances, loose threads&hellip;"></textarea>
-              <div class="md-hint">Markdown: <code>**bold**</code>, <code>*italic*</code>, <code>- bullets</code></div>
             </div>
+            <div class="md-hint">Markdown: <code>**bold**</code> &middot; <code>*italic*</code> &middot; <code>- bullets</code></div>
           </section>
 
         </div>
