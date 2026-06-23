@@ -41,24 +41,23 @@ Just know the design decisions are mine.
   phone or desktop.
 
 #### Desktop
-![Desktop Character List](<screenshots/Desktop - Character List.png>)
-![Create Character](<screenshots/Desktop - Create Character.png>)
-![Desktop Dice](<screenshots/Desktop - Dice Roll.png>)
+<img src="screenshots/Desktop - Character List.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Desktop - Create Character.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Desktop - Dice Roll.png" alt="Alt Text" style="width:50%; height:auto;">
 
 #### Mobile
-![Mobile Sign In](<screenshots/Mobile - Sign In.PNG>)
-![Mobile Dice](<screenshots/Mobile - Dice Roll.jpg>)
-![Mobile Character List](<screenshots/Mobile - Character List.PNG>)
+<img src="screenshots/Mobile - Sign In.PNG" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Mobile - Dice Roll.jpg" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Mobile - Character List.PNG" alt="Alt Text" style="width:50%; height:auto;">
 
 #### Others
-![Bundle Managment](<screenshots/Admin Modal - Bundle Managment.png>)
-![Settings](<screenshots/Admin Modal - Settings.png>)
-![Users](<screenshots/Admin Modal - Users.png>)
-![Archive](<screenshots/Archive Modal.png>)
-![Dice Roll Log](<screenshots/Dice Roll Log.png>)
-![Search](screenshots/Search.png)
-![User Appearance](<screenshots/User Apperance Modal.png>)
-
+<img src="screenshots/Admin Modal - Bundle Managment.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Admin Modal - Settings.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Admin Modal - Users.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Archive Modal.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Dice Roll Log.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Search.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/User Apperance Modal.png>" alt="Alt Text" style="width:50%; height:auto;">
 
 ## Quick start
 
