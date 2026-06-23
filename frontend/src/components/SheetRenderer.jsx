@@ -16,14 +16,31 @@ let allowExternalLinks = false;
 let sheetReadOnly = false;
 let sheetExportMode = false;
 
-// True if href points to a different origin than the app itself.
-// Relative / same-origin links are never treated as external.
+// True if href points to a different origin than the app itself, OR if it uses
+// a scheme that should never be handed to the browser regardless of the
+// allowExternalLinks setting.
+//
+// The javascript: check MUST come before new URL() because
+// new URL('javascript:alert(1)', origin) throws in most browsers, which would
+// send execution into the catch branch and return false — treating a script URL
+// as safe. Checking the raw string first closes that gap.
+//
+// data: is included for the same reason: a data: href can carry executable
+// content (e.g. data:text/html,<script>…</script>) and new URL() accepts it
+// without throwing, so the origin comparison would pass and it would be rendered
+// as a live link. Neutralizing both here means the <a> handler and the src
+// blocker (when added) share one consistent source of truth.
+//
+// Malformed URLs that URL() can't parse are also treated as external so they're
+// neutralized rather than silently passed through.
 function isExternalHref(href) {
   if (!href) return false;
+  if (/^javascript:/i.test(href.trim())) return true;  // always neutralize
+  if (/^data:/i.test(href.trim()))       return true;  // always neutralize
   try {
     return new URL(href, window.location.origin).origin !== window.location.origin;
   } catch {
-    return false;
+    return true;  // unparseable → treat as external → neutralize
   }
 }
 

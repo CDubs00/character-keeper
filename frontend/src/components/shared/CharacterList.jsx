@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { api, newId, slugify } from '../../api';
 import ActionMenu from './ActionMenu';
 import ShareModal from './ShareModal';
@@ -1415,16 +1415,44 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
   const [searchSort,    setSearchSort]    = useState('relevance');       // 'relevance' | 'date'
   const searchInputRef = useRef(null);
 
-  useEffect(() => {
+  const [loadError,     setLoadError]     = useState(null);
+
+  // ── Roster loader — stable callback so the Retry button can re-invoke it ──
+  // AbortController + 10s timeout converts a forever-stuck fetch (PWA returning
+  // from background, transient 502, session loss) into a real rejection, so the
+  // UI can never be stranded in "Loading…" indefinitely. The .catch() branch
+  // always calls setLoading(false), guaranteeing the spinner clears on failure.
+  const loadRoster = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    const ac = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ac.abort();
+    }, 10000);
+
     Promise.all([
       api.getCharacters(),
-      fetch('/api/campaigns', { credentials: 'include' }).then(r => r.json()).catch(() => []),
+      fetch('/api/campaigns', { credentials: 'include', signal: ac.signal }).then(r => r.json()).catch(() => []),
     ]).then(([c, camps]) => {
-      setChars(c);
-      setCampaigns(camps);
+      clearTimeout(timer);
+      setChars(Array.isArray(c) ? c : []);
+      setCampaigns(Array.isArray(camps) ? camps : []);
+      setLoading(false);
+    }).catch((err) => {
+      clearTimeout(timer);
+      if (err?.name === 'AbortError' && !timedOut) return;
+      setLoadError(timedOut
+        ? 'The server didn\'t respond. Check your connection and try again.'
+        : (err?.message || 'Could not load characters.'));
       setLoading(false);
     });
+
+    return () => { clearTimeout(timer); ac.abort(); };
   }, []);
+
+  useEffect(() => loadRoster(), [loadRoster]);
 
   // Debounced search: each keystroke resets a 200ms timer, so we only hit the
   // server once typing pauses. A term under 2 chars clears results and skips the
@@ -1835,7 +1863,28 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
         );
       })()}
 
-      {loading && !(query.trim().length >= 2) && (
+      {loadError && !(query.trim().length >= 2) && (
+        <div style={{
+          color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem',
+          textAlign: 'center', padding: '2rem', border: '1px dashed var(--border)',
+          borderRadius: '2px',
+        }}>
+          <div style={{ marginBottom: '0.75rem' }}>{loadError}</div>
+          <button
+            onClick={loadRoster}
+            style={{
+              fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+              padding: '0.4rem 0.9rem', background: 'transparent',
+              color: 'var(--accent)', border: '1px solid var(--accent-dim)',
+              borderRadius: '2px', cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {loading && !loadError && !(query.trim().length >= 2) && (
         <div style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', textAlign: 'center', padding: '2rem' }}>
           Loading...
         </div>
