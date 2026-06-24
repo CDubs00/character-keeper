@@ -45,7 +45,8 @@ Just know the design decisions are mine.
 <img src="screenshots/Desktop - Create Character.png" alt="Alt Text" style="width:75%; height:auto;">
 <img src="screenshots/Desktop - Dice Roll.png" alt="Alt Text" style="width:75%; height:auto;">
 <img src="screenshots/Character sheet ADnD.png" alt="Alt Text" style="width:75%; height:auto;">
-<img src="screenshots/Character sheet Risus.png" alt="Alt Text" style="width:75%; height:auto;">
+<img src="screenshots/Character_Sheet Savage_Pathfinder.png" alt="Alt Text" style="width:75%; height:auto;">
+<img src="screenshots/Character_Sheet_Risus.png" alt="Alt Text" style="width:75%; height:auto;">
 
 #### Mobile
 <img src="screenshots/Mobile - Sign In.PNG" alt="Alt Text" style="width:50%; height:auto;">
