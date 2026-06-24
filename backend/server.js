@@ -423,13 +423,25 @@ function sidecarFilePath(username, id, key) {
 }
 
 // ── Search path safety ──────────────────────────────────────────────────────
-// A bundle's "searchable" map is author-controlled. Bundles are trusted today,
-// but these guards are trust-independent hygiene: they stop a declared path from
-// walking the prototype chain (__proto__/constructor/prototype) or being absurdly
-// deep, no matter who wrote the bundle. The heavier "treat the whole map as
-// hostile" work (per-element leaf caps, load-time schema validation) is tracked
-// in SECURITY.md for when community bundle sharing lands.
-const SEARCH_MAX_DEPTH = 6;
+// A bundle's "searchable" map is author-controlled. Bundles are TRUSTED in the
+// admin-installed model (only the operator can drop a bundle into /bundles),
+// but these guards are trust-independent hygiene: they bound how much work the
+// server will do on behalf of a search query regardless of how the bundle's
+// shape, path declarations, or stored data look.
+//
+// SEARCH_MAX_DEPTH:  cap on dotted-path SEGMENTS in a single searchable entry.
+//                    Stops absurdly nested declarations like "a.b.c.d.e.f.g.h".
+// SEARCH_MAX_LEAVES: per-path cap on STRING LEAVES the resolver will visit
+//                    during a single getSearchable() entry's walk (hardening
+//                    #6). When a path hops through arrays, the leaf count
+//                    multiplies — `inventory.items.notes` against a character
+//                    with 10k items walks 10k leaves; with nested arrays it's
+//                    worse. Real characters won't come close to 500; a hostile
+//                    or buggy shape with a million entries gets stopped early.
+//                    Path-depth caps (above) don't help here because the
+//                    blow-up is WIDTH (array size), not depth.
+const SEARCH_MAX_DEPTH  = 6;
+const SEARCH_MAX_LEAVES = 500;
 const UNSAFE_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
 
 function isSafeSearchPath(path) {
@@ -1337,21 +1349,38 @@ app.get('/api/characters', requireAuth, (req, res) => {
 // element's `name` (so a hit can say WHICH edge/weapon/power matched); null for
 // plain scalar paths like info.concept. Bounded to the object it's handed — it
 // never follows anything outside the character.
-function resolveSearchPath(node, parts, item) {
+//
+// `budget` is a shared {remaining: N} counter threaded through every recursive
+// call in one walk. When a hostile or buggy shape would cause us to walk more
+// than SEARCH_MAX_LEAVES leaves, the resolver bails out and the path quietly
+// returns whatever it found so far. The caller never needs to know — the cap
+// is enforced silently. (We don't throw; a partial-result is more useful than
+// a 500 error, and search is best-effort anyway.) A fresh budget is allocated
+// per searchCharacter() entry below so paths are isolated from each other.
+function resolveSearchPath(node, parts, item, budget) {
+  if (budget && budget.remaining <= 0) return [];
   if (parts.length === 0) {
-    return typeof node === 'string' ? [{ value: node, item }] : [];
+    if (typeof node === 'string') {
+      if (budget) budget.remaining--;
+      return [{ value: node, item }];
+    }
+    return [];
   }
   const [head, ...rest] = parts;
-  if (UNSAFE_PATH_SEGMENTS.has(head)) return []; 
+  if (UNSAFE_PATH_SEGMENTS.has(head)) return [];
   const next = node == null ? undefined : node[head];
   if (next == null) return [];
   if (Array.isArray(next)) {
-    return next.flatMap(el => {
+    const out = [];
+    for (const el of next) {
+      if (budget && budget.remaining <= 0) break;
       const name = (el && typeof el === 'object' && typeof el.name === 'string') ? el.name : item;
-      return resolveSearchPath(el, rest, name);
-    });
+      const sub  = resolveSearchPath(el, rest, name, budget);
+      if (sub.length) out.push(...sub);
+    }
+    return out;
   }
-  return resolveSearchPath(next, rest, item);
+  return resolveSearchPath(next, rest, item, budget);
 }
 
 // Window a ~100-char snippet around the first match so long note/description
@@ -1388,9 +1417,13 @@ function searchCharacter(char, needle) {
   }
 
   // 2) Bundle-declared fields (scalars + array hops).
+  // Each searchable entry gets its OWN budget: one path that explodes in the
+  // data shouldn't starve the others. SEARCH_MAX_LEAVES is generous enough
+  // (500) that real characters never feel it; only pathological data does.
   const searchable = getSearchable(char.sheetId);
   for (const [p, label] of Object.entries(searchable)) {
-    for (const { value, item } of resolveSearchPath(char, p.split('.'), null)) {
+    const budget = { remaining: SEARCH_MAX_LEAVES };
+    for (const { value, item } of resolveSearchPath(char, p.split('.'), null, budget)) {
       if (value.toLowerCase().includes(needle)) {
         raw.push({ label, item, tier: 'field', snippet: searchSnippet(value, needle) });
       }

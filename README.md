@@ -41,9 +41,11 @@ Just know the design decisions are mine.
   phone or desktop.
 
 #### Desktop
-<img src="screenshots/Desktop - Character List.png" alt="Alt Text" style="width:50%; height:auto;">
-<img src="screenshots/Desktop - Create Character.png" alt="Alt Text" style="width:50%; height:auto;">
-<img src="screenshots/Desktop - Dice Roll.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Desktop - Character List.png" alt="Alt Text" style="width:75%; height:auto;">
+<img src="screenshots/Desktop - Create Character.png" alt="Alt Text" style="width:75%; height:auto;">
+<img src="screenshots/Desktop - Dice Roll.png" alt="Alt Text" style="width:75%; height:auto;">
+<img src="screenshots/Character sheet ADnD.png" alt="Alt Text" style="width:75%; height:auto;">
+<img src="screenshots/Character sheet ADnD.png" alt="Alt Text" style="width:75%; height:auto;">
 
 #### Mobile
 <img src="screenshots/Mobile - Sign In.PNG" alt="Alt Text" style="width:50%; height:auto;">
@@ -57,7 +59,7 @@ Just know the design decisions are mine.
 <img src="screenshots/Archive Modal.png" alt="Alt Text" style="width:50%; height:auto;">
 <img src="screenshots/Dice Roll Log.png" alt="Alt Text" style="width:50%; height:auto;">
 <img src="screenshots/Search.png" alt="Alt Text" style="width:50%; height:auto;">
-<img src="screenshots/User Apperance Modal.png>" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/User Apperance Modal.png" alt="Alt Text" style="width:50%; height:auto;">
 
 ## Quick start
 
