@@ -45,7 +45,7 @@ Just know the design decisions are mine.
 <img src="screenshots/Desktop - Create Character.png" alt="Alt Text" style="width:75%; height:auto;">
 <img src="screenshots/Desktop - Dice Roll.png" alt="Alt Text" style="width:75%; height:auto;">
 <img src="screenshots/Character sheet ADnD.png" alt="Alt Text" style="width:75%; height:auto;">
-<img src="screenshots/Character sheet ADnD.png" alt="Alt Text" style="width:75%; height:auto;">
+<img src="screenshots/Character sheet Risus.png" alt="Alt Text" style="width:75%; height:auto;">
 
 #### Mobile
 <img src="screenshots/Mobile - Sign In.PNG" alt="Alt Text" style="width:50%; height:auto;">
@@ -220,12 +220,11 @@ I'm not a security professional, so I leaned hard on AI guidance here and tried 
 - A minimum password policy (10+ chars) shared across setup, admin-create, and password reset
 - Field-ownership rules in autosave: a stale open sheet can't clobber campaign membership, shares, status, or the attachment list — those are read from disk and owned by their own endpoints
 - CSRF synchronizer token (env-gated via `CSRF_ENFORCE`; recommended on)
+- Bundle HTML are sandboxed via an attribute allowlist, DOMPurify, CSS scoping, and off-origin resource blocking. Community bundles shared on Discord, Reddit, or GitHub are safer to install than before, but treat them with the same judgment you'd apply to any third-party code — review what you're installing, especially on a multi-user instance.
 
 The **attachments** feature got the most careful treatment, because letting users upload arbitrary files is worrisome. The approach is "store inert, serve guarded": an allowlist of extensions (not a denylist), a magic-byte sniff so a renamed `evil.exe` → `backstory.pdf` gets caught, server-generated filenames so your original name never touches the filesystem, pinned content types with `nosniff`, and a forced download for anything the browser might try to execute. Active-content types like SVG are deliberately left off the list. There are per-file (25 MB), per-character (50 files), and total (250 MB) caps.
 
-**Content-Security-Policy currently runs in report-only mode** (env-gated via `CSP_ENFORCE`; see `.env.example`).
-
-**Bundle HTML is not yet sandboxed.** Bundles are folders of HTML, CSS, and JSON dropped into the bundles directory by an administrator. They are treated as trusted author content, the same way you'd trust any code you run on your server. Sandboxing (attribute allowlist + DOMPurify + sandboxed URLs) is on the roadmap and is the prerequisite for safely running bundles from sources you don't control. Until that work lands: **only install bundles you trust.** Community bundles shared on Discord, Reddit, GitHub, etc. carry the same risk as running someone else's code review them before dropping them in, exactly as you would any third-party script.
+**Content-Security-Policy** is enforced when CSP_ENFORCE=true (report-only by default — watch the console, then flip). See .env.example for all available security toggles.
 
 See [SECURITY.md](SECURITY.md) for the reporting process and security model.
 
