@@ -15,11 +15,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # QEMU lets the x86 runner emulate ARM for the arm64 build.
+      # Normalize repo name to lowercase — Docker requires it, GitHub preserves casing.
+      - name: Set image name
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # Buildx is required for multi-platform builds.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -45,7 +47,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest
             type=sha,format=short
@@ -58,5 +60,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
