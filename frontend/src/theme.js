@@ -67,6 +67,17 @@ export const THEMES = {
     '--text-accent':  '#a35e18', 
   },
 },
+
+rose: {
+    label: 'Rose',
+    vars: {
+      '--bg-deep': '#120a0d', '--bg-surface': '#1c1015', '--bg-raised': '#27161d', '--bg-input': '#311c24',
+      '--border': '#4a2a36', '--border-bright': '#7a4458',
+      '--accent': '#c8607a', '--accent-dim': '#8a3a50', '--accent-glow': 'rgba(200,96,122,0.18)',
+      '--text-accent': '#e8909e',
+    },
+  },
+  
 };
 
 // Write a preset's variables onto :root. Inline custom-property values on the

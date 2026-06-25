@@ -6,7 +6,7 @@ A self-hosted, system (TTRPG) agnostic, character sheet app for tabletop RPGs. Y
 
 I built this for my own table and put it out there in case it's useful to anyone else who'd rather host their own thing than rent a SaaS character vault. It's aimed at personal and smallish group use, a handful of playersn and a few GMs.
 
-Ships with sheets for **Savage Worlds Adventure Edition**, **Risus: The Anything RPG**, **Savage Pathfinder**, **Dungeons & Dragons 5e**, and **Advanced Dungeons & Dragons 2e**. The version number shows in the footer and at `/api/version`.
+Ships with sheets for **Savage Pathfinder**, **Dungeons & Dragons 5e**, **Risus: The Anything RPG**, and **Advanced Dungeons & Dragons 2e**. The version number shows in the footer and at `/api/version`.
 
 ## A note up front: this was built with a lot of AI help
 
@@ -244,14 +244,13 @@ security issue, see [SECURITY.md](SECURITY.md) — please report privately, not 
 
 ## Roadmap
 
-Roughly in order, dependency-permitting:
+Roughly in order, dependency and time permitting:
 
-- **Bundle HTML Sandboxing** — gated on the bundle-sanitization work above.
 - **Security Audit** - confirm every mutating route rejects unauthenticated and cross-user requests, and lock that down with automated tests so it can't quietly regress.
 - **More Bundles** — candidates I'd like to do next include D&D 3e, D&D 5e 2024, and Star Wars Saga Edition.
+- **Attachment txt/md Editing** - allow inbrowser editting of .md and .txt attachments.
 - **Mobile layout polish** — single-column, collapsible sections on small screens.
-- **Standalone HTML export** — bake a character plus its template into one portable file you can open without the app. 
-- **Attachment txt/md Editing** - allow inbrowser editting of .md and .txt attachments. 
+- **Standalone HTML export** — bake a character plus its template into one portable file you can open without the app.  
 - **Character Ownership transfers** - Allow a user to transfer a character then own to another User/Admin. 
 - **Admin login-history log** - Build in a viewable log for the admin to monitor session logins from users and shares.
 - **User Die Size Setting Override** - Allow users to set thier own die size on a scale. 
