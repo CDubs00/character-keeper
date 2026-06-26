@@ -8,7 +8,6 @@ import { GearIcon, SwordsIcon, PaletteIcon, SignOutIcon, ShareIcon,
 import VersionTag from './VersionTag';
 import ExportStage from '../ExportStage';   // adjust if your tree differs — same folder as SheetRenderer.jsx
 import { Toast } from './UI';           // wherever UI.jsx actually lives for this file
-// import { zipSync } from 'fflate';  
 import { zipSync, strToU8 } from 'fflate';    
 
 function downloadBlob(blob, filename) {
@@ -1437,7 +1436,14 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
       fetch('/api/campaigns', { credentials: 'include', signal: ac.signal }).then(r => r.json()).catch(() => []),
     ]).then(([c, camps]) => {
       clearTimeout(timer);
-      setChars(Array.isArray(c) ? c : []);
+      if (!Array.isArray(c)) {
+        setLoadError(c?.status === 401
+          ? 'Your session has expired. Force-close and reopen the app to log in again.'
+          : 'Could not load characters.');
+        setLoading(false);
+        return;
+      }
+      setChars(c);
       setCampaigns(Array.isArray(camps) ? camps : []);
       setLoading(false);
     }).catch((err) => {
@@ -1453,6 +1459,14 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
   }, []);
 
   useEffect(() => loadRoster(), [loadRoster]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadRoster();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadRoster]);
 
   // Debounced search: each keystroke resets a 200ms timer, so we only hit the
   // server once typing pauses. A term under 2 chars clears results and skips the
