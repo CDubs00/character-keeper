@@ -16,7 +16,31 @@ import { DIE_ICONS } from './DiceFaces';
 
 function formatTime(iso) {
   try {
-    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const date = new Date(iso);
+    const now = new Date();
+
+    const isToday =
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+
+    if (isToday) {
+      return date.toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    }
+
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+
+    const time = date.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    return `${yyyy}.${mm}.${dd} ${time}`;
   } catch {
     return '';
   }

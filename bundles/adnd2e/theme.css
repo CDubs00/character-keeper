@@ -492,10 +492,13 @@
    ::before) to thicken/thin the outline. */
 .sheet-root .shield {
   position: relative;
-  width: 66px; height: 72px;
+  width: 66px; 
+  height: 72px;
   background: var(--green);          /* outline colour = base layer */
   clip-path: polygon(0 0, 100% 0, 100% 64%, 50% 100%, 0 64%);
-  display: flex; align-items: center; justify-content: center;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
   padding-bottom: 14px;
 }
 .sheet-root .shield::before {
@@ -506,11 +509,15 @@
   clip-path: polygon(0 0, 100% 0, 100% 64%, 50% 100%, 0 64%);
 }
 .sheet-root .shield input {
-  position: relative; z-index: 1;    /* sit above the ::before fill */
-  border: none; text-align: center;
+  position: relative; 
+  z-index: 1;    /* sit above the ::before fill */
+  border: none; 
+  text-align: center;
   font-family: var(--f-display);
-  font-weight: 700; font-size: 22px;
-  background: transparent; padding: 0;
+  font-weight: 700; 
+  font-size: 22px;
+  background: transparent; 
+  padding: 0;
 }
 .sheet-root .shield-lbl {
   font-family: var(--f-display);

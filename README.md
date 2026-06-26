@@ -2,6 +2,8 @@
 
 ![icon](<frontend/public/icon-512.png>)
 
+This project is **under active development**, and you may encounter some breakage or incomplete features
+
 A self-hosted, system (TTRPG) agnostic, character sheet app for tabletop RPGs. You run it on your own server, you keep your own data (plain JSON files, no database), and you add new game systems by dropping in a folder instead of waiting for me to write code for them.
 
 I built this for my own table and put it out there in case it's useful to anyone else who'd rather host their own thing than rent a SaaS character vault. It's aimed at personal and smallish group use, a handful of playersn and a few GMs.

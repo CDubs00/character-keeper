@@ -1389,17 +1389,25 @@ function highlightMatch(text, term) {
   ];
 }
 
+// ── Roster cache ─────────────────────────────────────────────────────────────
+// Lives outside the component so it survives unmount/remount (e.g. navigating
+// into a sheet and swiping back). On first load it's null → show spinner.
+// On return, the cached data renders instantly while a background refresh runs.
+let rosterCache = null;
+
 export default function CharacterList({ onSelect, onNew, user, onUser, onLogout }) {
-  const [chars,         setChars]         = useState([]);
-  const [campaigns,     setCampaigns]     = useState([]);
-  const [loading,       setLoading]       = useState(true);
+  const [chars,         setChars]         = useState(rosterCache?.chars     ?? []);
+  const [campaigns,     setCampaigns]     = useState(rosterCache?.campaigns ?? []);
+  const [loading,       setLoading]       = useState(rosterCache === null);
   const [showNewModal,  setShowNewModal]  = useState(false);
   const [showCampaigns, setShowCampaigns] = useState(false);
   const [showAdmin,     setShowAdmin]     = useState(false);
   const [showAppearance, setShowAppearance] = useState(false);
   const [renamingChar,  setRenamingChar]  = useState(null); // character object being renamed
   const [creating,      setCreating]      = useState(false);
-  const [showArchived,  setShowArchived]  = useState(false);
+  const [showArchived,  setShowArchived]  = useState(
+    () => sessionStorage.getItem('ck-showArchived') === 'true'
+  );
   const [showArchivedCampaigns, setShowArchivedCampaigns] = useState(false);
   const [joiningChar,   setJoiningChar]   = useState(null); // character being added to a campaign
   const [sharingChar,   setSharingChar]   = useState(null); // character whose share links are being managed
@@ -1443,6 +1451,9 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
         setLoading(false);
         return;
       }
+      const chars = Array.isArray(c) ? c : [];
+      const campaigns = Array.isArray(camps) ? camps : [];
+      rosterCache = { chars, campaigns };
       setChars(c);
       setCampaigns(Array.isArray(camps) ? camps : []);
       setLoading(false);
@@ -1951,7 +1962,11 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
           {myInactive.length > 0 && (
             <div style={{ marginTop: '1.5rem' }}>
               <div
-                onClick={() => setShowArchived(v => !v)}
+                onClick={() => setShowArchived(v => {
+                  const next = !v;
+                  sessionStorage.setItem('ck-showArchived', next);
+                  return next;
+                })}
                 style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '0.5rem', cursor: 'pointer', userSelect: 'none' }}
               >
                 {showArchived ? '▾' : '▸'} Inactive ({myInactive.length})

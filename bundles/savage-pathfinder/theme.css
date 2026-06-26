@@ -254,10 +254,10 @@
   color: var(--ink-faint);
 }
 .sheet-root .shield {
+  position: relative;
   width: 52px;
   height: 56px;
-  border: 2px solid var(--gold);
-  background: rgba(255,255,255,0.5);
+  background: var(--gold);
   clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
   display: flex;
   align-items: center;
@@ -265,7 +265,16 @@
   padding-bottom: 8px;
 }
 .sheet-root .shield-sm { width: 42px; height: 46px; border-color: var(--vellum-line); }
+.sheet-root .shield::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: var(--vellum);
+  clip-path: polygon(0 0, 100% 0, 100% 64%, 50% 100%, 0 64%);
+}
 .sheet-root .shield input {
+  position: relative;
+  z-index: 1;
   border: none;
   text-align: center;
   font-family: var(--f-display);
