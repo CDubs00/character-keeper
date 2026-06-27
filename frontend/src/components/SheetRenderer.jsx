@@ -676,7 +676,16 @@ function Portrait({ charId, portraitUrl, onUpload, readOnly }) {
     }
   };
 
-  // Read-only mode (share view): just show the image or a neutral placeholder, no click handler
+  const handleRemove = async (e) => {
+    e.stopPropagation(); // don't trigger the upload click on the parent div
+    const res = await fetch(`/api/characters/${charId}/portrait`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    if (res.ok && onUpload) onUpload(null);
+  };
+
+  // Read-only mode (share view): just show the image or a neutral placeholder
   if (readOnly) {
     return (
       <div className="portrait-area" style={{ cursor: 'default' }}>
@@ -694,6 +703,14 @@ function Portrait({ charId, portraitUrl, onUpload, readOnly }) {
         ? <img src={`${portraitUrl}?t=${Date.now()}`} alt="Character portrait" />
         : <span className="portrait-placeholder">Click to upload portrait</span>
       }
+      {portraitUrl && (
+        <button
+          className="portrait-remove"
+          onClick={handleRemove}
+          title="Remove portrait"
+          type="button"
+        >✕</button>
+      )}
       <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} />
     </div>
   );

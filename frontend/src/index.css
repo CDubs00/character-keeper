@@ -398,6 +398,42 @@ label {
    with plain .cf-info-pop / .cf-dialog selectors if they want.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* portrait Area */
+/* ── Portrait widget ── */
+.portrait-area {
+  position: relative;
+  overflow: hidden;
+}
+.portrait-area img {
+  transition: filter 0.15s;
+}
+.portrait-area:hover img {
+  filter: brightness(0.45);
+}
+.portrait-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid white;
+  color: #fff;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 2;
+}
+.portrait-area:hover .portrait-remove {
+  opacity: 1;
+}
+
 /* ── Tabs ── */
 :where(.cf-tab-bar) {
   display: flex;

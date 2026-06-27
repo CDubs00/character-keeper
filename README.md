@@ -24,6 +24,7 @@ Just know the design decisions are mine.
 
 - **Game systems are "bundles," not hard coded.** A bundle is just a folder with four files (layout, fields, styling, metadata). Drop it into the `bundles` directory, refresh, and the system shows up. Adding D&D 5e didn't require touching the app. New system = new folder, not a new release. I designed it this way to encurage community growth of the sheets. Im sure people with better ideas or more skills then me can come up with amazing sheets to share with others. 
     - **HTML-template sheets.** A bundle's layout is plain HTML wired to live data through `data-*` attributes. A single recursive renderer reads those attributes and binds them to state, so there's no custom React component per game.
+    - Here is a place to share: [Character Sheet Bundles](https://github.com/CDubs00/character-keeper/discussions/15)
 - **Roles and visibility.** Every account is some mix of `admin` / `gm` /
   `player`. Players see their own characters. GMs see characters tagged to
   campaigns they run. Admins see the user list and settings.

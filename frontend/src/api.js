@@ -123,6 +123,9 @@ export const api = {
   async deleteAttachment(id, key) {
     return handle(await fetchWithRetry(`${BASE}/api/characters/${id}/attachments/${key}`, { method: 'DELETE' }));
   },
+  async deletePortrait(id) {
+  return handle(await fetchWithRetry(`${BASE}/api/characters/${id}/portrait`, { method: 'DELETE' }));
+  },
   attachmentUrl(id, key) {
     return `${BASE}/api/characters/${id}/attachments/${key}`;
   },

@@ -1130,6 +1130,27 @@ app.get('/api/characters/:id/portrait', requireAuth, validId, (req, res) => {
   res.status(404).json({ error: 'No portrait' });
 });
 
+// DELETE portrait — removes the image file and clears the portrait field.
+// Uses the same auth chain as the POST (requireCharOwner).
+app.delete('/api/characters/:id/portrait', requireAuth, validId, requireCharOwner, (req, res) => {
+  const found = req.foundChar;
+  const owner = found.username;
+
+  // Delete whichever extension variant exists on disk.
+  const extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+  extensions.forEach(ext => {
+    const p = portraitPath(owner, req.params.id, ext);
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  });
+
+  // Clear the portrait field in the character envelope.
+  const char = JSON.parse(fs.readFileSync(found.filePath));
+  char.portrait = null;
+  fs.writeFileSync(found.filePath, JSON.stringify(char, null, 2));
+
+  res.json({ portrait: null });
+});
+
 // ---------------------------------------------------------------------------
 // Attachments — non-portrait files kept with a character.
 //   • upload / delete: owner-or-admin, and only when allowAttachments is on
