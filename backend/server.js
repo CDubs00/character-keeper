@@ -1680,10 +1680,16 @@ app.get('/api/characters/:id/rolls', requireAuth, validId, (req, res) => {
   res.json(readRolls(found.username, req.params.id));
 });
 
-// POST /api/characters/:id/rolls   body: { dice, modifier, total, source? }
+// POST /api/characters/:id/rolls   body: { dice, modifier, total, source?, segments? }
 // Appends one roll entry. Fired automatically by DiceTray after every throw —
 // see the "Roll log" comment above for why this bypasses the character
 // envelope entirely instead of going through PUT /api/characters/:id.
+//
+// `segments` is optional: present only when the user typed a slash-separated
+// multi-roll like "1d6x/1d6x", where each segment was rolled independently
+// and has its own total. RollLog renders these side-by-side; the top-level
+// `total` is still the grand total across all segments, kept for backward
+// compatibility with single-roll consumers.
 app.post('/api/characters/:id/rolls', requireAuth, validId, (req, res) => {
   const found = findCharFile(req.params.id);
   if (!found) return res.status(404).json({ error: 'Not found' });
@@ -1693,9 +1699,35 @@ app.post('/api/characters/:id/rolls', requireAuth, validId, (req, res) => {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  const { dice, modifier, total, source } = req.body || {};
+  const { dice, modifier, total, source, segments } = req.body || {};
   if (typeof dice !== 'object' || dice === null || typeof total !== 'number') {
     return res.status(400).json({ error: 'Invalid roll payload' });
+  }
+
+  // Validate segments if present: must be an array of objects shaped like
+  // { notation:string, dice:object, modifier:number, total:number }.
+  // Reject anything malformed rather than silently dropping fields — the
+  // client builds this from the parser output, so a bad shape is a bug.
+  let cleanSegments = null;
+  if (segments !== undefined) {
+    if (!Array.isArray(segments)) {
+      return res.status(400).json({ error: 'segments must be an array' });
+    }
+    cleanSegments = [];
+    for (const seg of segments) {
+      if (!seg || typeof seg !== 'object'
+        || typeof seg.notation !== 'string'
+        || typeof seg.dice !== 'object' || seg.dice === null
+        || typeof seg.total !== 'number') {
+        return res.status(400).json({ error: 'Invalid segment shape' });
+      }
+      cleanSegments.push({
+        notation: seg.notation,
+        dice:     seg.dice,
+        modifier: Number.isFinite(seg.modifier) ? seg.modifier : 0,
+        total:    seg.total,
+      });
+    }
   }
 
   const entry = {
@@ -1705,6 +1737,7 @@ app.post('/api/characters/:id/rolls', requireAuth, validId, (req, res) => {
     modifier: Number.isFinite(modifier) ? modifier : 0,
     total,
     source: typeof source === 'string' && source.trim() ? source.trim() : null,
+    ...(cleanSegments ? { segments: cleanSegments } : {}),
   };
 
   res.json(appendRoll(found.username, req.params.id, entry));

@@ -230,13 +230,18 @@ const DiceTray = forwardRef(function DiceTray(
   // A direct fetch with credentials, not the api.js wrapper — DiceTray has no
   // api.js import today and this keeps the file's own existing convention
   // (see the schema fetch above) rather than introducing a second one.
-  const logRoll = useCallback((groups, mod, total, label) => {
+  //
+  // `segments` is included only for multi-roll command-bar rolls so RollLog can
+  // render per-segment totals; single rolls omit it for a leaner sidecar file.
+  const logRoll = useCallback((groups, mod, total, label, segments) => {
     if (!characterId) return;
+    const body = { dice: groups, modifier: mod, total, source: label || '' };
+    if (segments && segments.length > 1) body.segments = segments;
     fetch(`/api/characters/${characterId}/rolls`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dice: groups, modifier: mod, total, source: label || '' }),
+      body: JSON.stringify(body),
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((rolls) => { if (rolls) onRollLogged?.(rolls); })
@@ -422,7 +427,15 @@ const DiceTray = forwardRef(function DiceTray(
         label:     notationStr,
         isMulti:   segments.length > 1,
       });
-      logRoll(combinedDice, segments.length === 1 ? segments[0].parsed.modifier : 0, grandTotal, notationStr);
+      logRoll(
+        combinedDice,
+        segments.length === 1 ? segments[0].parsed.modifier : 0,
+        grandTotal,
+        notationStr,
+        // Pass segment data for multi-rolls so the log can show per-segment
+        // totals; logRoll itself drops this when segments.length <= 1.
+        segmentResults,
+      );
 
       return { total: grandTotal };
     } catch (e) {

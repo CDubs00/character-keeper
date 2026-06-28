@@ -404,47 +404,110 @@ export default function RollLog({ open, onClose, rolls, onRollCommand }) {
             </p>
           )}
 
-          {rolls.map((entry) => (
-            <div key={entry.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '8px 4px', borderBottom: '1px solid var(--border)',
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {entry.source && (
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem',
-                    color: 'var(--text-dim)', marginBottom: 2, letterSpacing: '0.03em' }}>
-                    {entry.source}
+          {rolls.map((entry) => {
+            // Multi-roll entries (slash-separated like "1d6x/1d6x") carry
+            // their per-segment breakdown.  Each segment had its own total
+            // when rolled, so we show each one separately rather than a
+            // single combined total that would misrepresent what happened.
+            const isMulti = Array.isArray(entry.segments) && entry.segments.length > 1;
+
+            return (
+              <div key={entry.id} style={{
+                display: 'flex', alignItems: isMulti ? 'flex-start' : 'center', gap: 10,
+                padding: '8px 4px', borderBottom: '1px solid var(--border)',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {entry.source && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem',
+                      color: 'var(--text-dim)', marginBottom: 4, letterSpacing: '0.03em' }}>
+                      {entry.source}
+                    </div>
+                  )}
+
+                  {isMulti ? (
+                    /* Per-segment rows: notation · dice · total */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {entry.segments.map((seg, i) => (
+                        <div key={i} style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          paddingTop: i > 0 ? 4 : 0,
+                          borderTop: i > 0 ? '1px dashed var(--border)' : 'none',
+                        }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem',
+                            color: 'var(--text-dim)', minWidth: 56 }}>
+                            {seg.notation}
+                          </span>
+                          <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap',
+                            alignItems: 'center', gap: 5 }}>
+                            {Object.entries(seg.dice || {})
+                              .sort((a, b) => parseInt(a[0].slice(1), 10) - parseInt(b[0].slice(1), 10))
+                              .map(([die, vals]) => {
+                                const Glyph = DIE_ICONS[die];
+                                return (
+                                  <span key={die} style={{ display: 'inline-flex', alignItems: 'center',
+                                    gap: 3, fontFamily: 'var(--font-mono)', fontSize: '0.7rem',
+                                    color: 'var(--text-dim)' }}>
+                                    {Glyph && <Glyph size={14} />}
+                                    {vals.join(',')}
+                                  </span>
+                                );
+                              })}
+                            {seg.modifier !== 0 && (
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem',
+                                color: 'var(--text-dim)' }}>
+                                {seg.modifier > 0 ? `+${seg.modifier}` : seg.modifier}
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700,
+                            fontSize: '1.05rem', color: 'var(--text-accent)',
+                            minWidth: 28, textAlign: 'right' }}>
+                            {seg.total}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    /* Single roll: dice inline, total on the right (existing layout) */
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                      {Object.entries(entry.dice || {})
+                        .sort((a, b) => parseInt(a[0].slice(1), 10) - parseInt(b[0].slice(1), 10))
+                        .map(([die, vals]) => {
+                          const Glyph = DIE_ICONS[die];
+                          return (
+                            <span key={die} style={{ display: 'inline-flex', alignItems: 'center', gap: 3,
+                              fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                              {Glyph && <Glyph size={14} />}
+                              {vals.join(',')}
+                            </span>
+                          );
+                        })}
+                      {entry.modifier !== 0 && (
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                          {entry.modifier > 0 ? `+${entry.modifier}` : entry.modifier}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem',
+                    color: 'var(--text-dim)', marginTop: 4 }}>
+                    {formatTime(entry.rolledAt)}
+                  </div>
+                </div>
+
+                {/* Right-rail total: only for single rolls.  Multi-rolls show
+                    totals inline per segment, so a single grand total here
+                    would just confuse what's a sum versus what's individual. */}
+                {!isMulti && (
+                  <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700,
+                    fontSize: '1.3rem', color: 'var(--text-accent)', minWidth: 36, textAlign: 'right' }}>
+                    {entry.total}
                   </div>
                 )}
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                  {Object.entries(entry.dice || {})
-                    .sort((a, b) => parseInt(a[0].slice(1), 10) - parseInt(b[0].slice(1), 10))
-                    .map(([die, vals]) => {
-                      const Glyph = DIE_ICONS[die];
-                      return (
-                        <span key={die} style={{ display: 'inline-flex', alignItems: 'center', gap: 3,
-                          fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
-                          {Glyph && <Glyph size={14} />}
-                          {vals.join(',')}
-                        </span>
-                      );
-                    })}
-                  {entry.modifier !== 0 && (
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
-                      {entry.modifier > 0 ? `+${entry.modifier}` : entry.modifier}
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-dim)', marginTop: 2 }}>
-                  {formatTime(entry.rolledAt)}
-                </div>
               </div>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700,
-                fontSize: '1.3rem', color: 'var(--text-accent)', minWidth: 36, textAlign: 'right' }}>
-                {entry.total}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </>,
