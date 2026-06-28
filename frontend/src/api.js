@@ -200,6 +200,13 @@ export const api = {
       body: JSON.stringify({ sortBy }),
     }));
   },
+  async setMyDiceScale(diceScale) {
+  return handle(await fetchWithRetry(`${BASE}/api/me/preferences`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ diceScale }),
+  }));
+  },
   async getSchema(systemId) {
     return handle(await fetchWithRetry(`${BASE}/api/schema/${systemId}`));
   },

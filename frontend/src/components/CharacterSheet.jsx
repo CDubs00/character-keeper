@@ -16,11 +16,11 @@ import DiceTray from './DiceTray';
 import RollLog from './shared/RollLog';
 import FilesModal from './shared/FilesModal';
 import { api } from '../api';
-import { SwordsIcon, DiceIcon, LogIcon, FileIcon } from './shared/Icons';
+import { SwordsIcon, DiceIcon, FileIcon } from './shared/Icons';
 
 const AUTOSAVE_DELAY_MS = 800;
 
-export default function CharacterSheet() {
+export default function CharacterSheet({ user }) {
   const { id }   = useParams();
   const navigate = useNavigate();
 
@@ -32,6 +32,7 @@ export default function CharacterSheet() {
 
   const autosaveTimer = useRef(null);
   const pendingChar   = useRef(null);
+  const diceRef       = useRef(null);   // exposes rollFromNotation to RollLog command bar
 
   const [diceOpen,      setDiceOpen]      = useState(false);
   const [diceAvailable, setDiceAvailable] = useState(true);  // hidden if a bundle opts out
@@ -220,16 +221,6 @@ export default function CharacterSheet() {
               <DiceIcon size={17} />
             </button>
           )}
-          {/* Toggles the roll log panel. Gated on the same flag as the dice
-              tray — a log is meaningless for a diceless bundle. */}
-          {diceAvailable && (
-            <button className="btn-ghost" onClick={() => setLogOpen((o) => !o)}
-              title="Roll log" aria-label="Roll log"
-              style={{ padding: '0.2rem 0.2rem', lineHeight: 0,
-                display: 'inline-flex', alignItems: 'center' }}>
-              <LogIcon size={17} />
-            </button>
-          )}
         </div>
 
         {/* Center — desktop: grows in the middle (basis 0) and truncates.
@@ -286,20 +277,32 @@ export default function CharacterSheet() {
           rail shows when open. Reports availability so the 🎲 can hide for
           diceless bundles. Every completed roll is logged server-side and
           reported back up via onRollLogged, which keeps `rolls` (and the log
-          panel) current without RollLog needing to fetch on its own. */}
+          panel) current without RollLog needing to fetch on its own.
+
+          ref={diceRef} wires forwardRef so the command bar in RollLog can call
+          diceRef.current.rollFromNotation(notationStr). onLogOpen moves the
+          log toggle into the tray rail itself. */}
       <DiceTray
+        ref={diceRef}
         open={diceOpen}
         onClose={() => setDiceOpen(false)}
         sheetId={char.sheetId}
         characterId={id}
+        diceScale={user?.diceScale ?? 3}   // ← add this
         onAvailabilityChange={setDiceAvailable}
         onRollLogged={setRolls}
+        onLogOpen={() => setLogOpen(true)}
       />
 
       <RollLog
         open={logOpen}
         onClose={() => setLogOpen(false)}
         rolls={rolls}
+        onRollCommand={
+          diceAvailable
+            ? (notation) => diceRef.current?.rollFromNotation(notation)
+            : undefined
+        }
       />
 
       {filesOpen && (

@@ -15,10 +15,12 @@
  * Not here yet (Phase 3): the per-character roll log + its sidecar endpoints.
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import DiceBox from '@3d-dice/dice-box';
 import { DIE_ICONS } from './shared/DiceFaces';
+import { LogIcon, ClearDiceIcon } from './shared/Icons';
+import { parseNotation, evaluateGroup, parseMultiRoll } from './diceParser';
 
 const ASSET_PATH   = '/assets/dice-box/';
 const DEFAULT_DICE = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
@@ -36,9 +38,12 @@ const DEFAULT_DICE = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
 const SCALE_DIVISOR = 120;
 const SCALE_MIN = 5;
 const SCALE_MAX = 14;
-function computeScale() {
+const USER_SCALE_MULT = { 1: 0.55, 2: 0.75, 3: 1.0, 4: 1.35, 5: 1.7 };
+function computeScale(userPref = 3) {
   const short = Math.min(window.innerWidth, window.innerHeight);
-  return Math.max(SCALE_MIN, Math.min(SCALE_MAX, Math.round(short / SCALE_DIVISOR)));
+  const base  = Math.max(SCALE_MIN, Math.min(SCALE_MAX, Math.round(short / SCALE_DIVISOR)));
+  const mult  = USER_SCALE_MULT[userPref] ?? 1.0;
+  return Math.max(SCALE_MIN, Math.min(SCALE_MAX, Math.round(base * mult)));
 }
 
 // How long settled dice stay on screen before they fade away on their own.
@@ -59,9 +64,12 @@ function getThemeColor() {
   return v || DEFAULT_DICE_COLOR;
 }
 
-export default function DiceTray({ open, onClose, sheetId, characterId, onAvailabilityChange, onRollLogged }) {
+const DiceTray = forwardRef(function DiceTray(
+  { open, onClose, sheetId, characterId, diceScale = 3, onAvailabilityChange, onRollLogged, onLogOpen },
+  ref
+) {
   const boxRef    = useRef(null);              // live DiceBox instance
-  const scaleRef  = useRef(computeScale());    // current scale (avoids re-render churn)
+  const scaleRef  = useRef(computeScale(diceScale));    // current scale (avoids re-render churn)
   const colorRef  = useRef(getThemeColor()); // current dice tint (user theme --accent)
   const removeRef = useRef(null);              // auto-remove timer handle
 
@@ -107,16 +115,25 @@ export default function DiceTray({ open, onClose, sheetId, characterId, onAvaila
       .catch((e) => console.error('[dice] init failed:', e));
   }, []);
 
+  // ── Init the physics box on mount and whenever the user's dice-size
+  // preference changes. Previously this was two separate effects (one
+  // mount-only, one for diceScale) which both fired on mount and raced —
+  // the loser's canvas would get yanked from the DOM mid-init but its
+  // box.init() promise would still resolve and clobber boxRef.current,
+  // leaving us holding an orphan DiceBox whose canvas no longer exists.
+  // One effect, one init.
   useEffect(() => {
-    initBox(scaleRef.current);
+    const next = computeScale(diceScale);
+    scaleRef.current = next;
+    boxRef.current = null;
+    initBox(next);
     return () => {
       boxRef.current = null;
       if (removeRef.current) { clearTimeout(removeRef.current); removeRef.current = null; }
       const mount = document.getElementById('dice-box');
       if (mount) mount.innerHTML = '';
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [diceScale, initBox]);
 
   // ── Re-scale (and re-init) on resize / rotation, debounced ─────────────────
   useEffect(() => {
@@ -124,16 +141,21 @@ export default function DiceTray({ open, onClose, sheetId, characterId, onAvaila
     const onResize = () => {
       clearTimeout(t);
       t = setTimeout(() => {
-        const next = computeScale();
+        // If a roll is currently animating, skip this re-init. iOS keyboard
+        // pop-ups fire `resize` and a mid-roll re-init nukes boxRef, causing
+        // the in-flight box.roll() to resolve with no values (total = 0). The
+        // next resize after the roll finishes will pick up the new scale.
+        if (rolling) return;
+        const next = computeScale(diceScale);
         if (next === scaleRef.current) return;
         scaleRef.current = next;
         boxRef.current = null;
-        initBox(next);                        // assets are cached, so this is quick
+        initBox(next);
       }, 250);
     };
     window.addEventListener('resize', onResize);
     return () => { window.removeEventListener('resize', onResize); clearTimeout(t); };
-  }, [initBox]);
+  }, [initBox, diceScale, rolling]);
 
   // ── Read the bundle's dice config (default to the standard set) ────────────
   useEffect(() => {
@@ -208,13 +230,13 @@ export default function DiceTray({ open, onClose, sheetId, characterId, onAvaila
   // A direct fetch with credentials, not the api.js wrapper — DiceTray has no
   // api.js import today and this keeps the file's own existing convention
   // (see the schema fetch above) rather than introducing a second one.
-  const logRoll = useCallback((groups, mod, total) => {
+  const logRoll = useCallback((groups, mod, total, label) => {
     if (!characterId) return;
     fetch(`/api/characters/${characterId}/rolls`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dice: groups, modifier: mod, total }),
+      body: JSON.stringify({ dice: groups, modifier: mod, total, source: label || '' }),
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((rolls) => { if (rolls) onRollLogged?.(rolls); })
@@ -273,6 +295,147 @@ export default function DiceTray({ open, onClose, sheetId, characterId, onAvaila
       setRolling(false);
     }
   }, [pool, poolCount, modifier, rolling, fadeAndClear, logRoll]);
+
+  // ── Command-bar roll (notation string) ────────────────────────────────────
+  // Called from RollLog via the ref. Parses the notation, sends the base dice
+  // pool to the physics engine for visuals, then applies result modifiers
+  // (keep/drop, successes, explode, …) in JS via diceParser.evaluateGroup().
+  //
+  // Supports "/" to roll multiple independent pools: "1d6x/1d8+2" rolls each
+  // segment separately and shows both totals in the result card.
+  //
+  // Falls back to pure-JS values (no animation) when the box isn't ready yet —
+  // math and logging still work either way.
+  const rollFromNotation = useCallback(async (notationStr) => {
+    if (rolling) return { error: 'A roll is already in progress' };
+
+    // Parse — detect single vs multi-roll (/ separator)
+    let segments;
+    try {
+      segments = parseMultiRoll(notationStr);
+    } catch (e) {
+      return { error: e.message };
+    }
+
+    setRolling(true);
+    setResult(null);
+
+    try {
+      const box = boxRef.current;
+
+      // ── Phase 1: collect all dice across every segment for the engine ────
+      // We send one combined roll to the physics engine (all base dice from all
+      // segments together) so they all tumble at once visually, then split the
+      // results back out by segment.
+      //
+      // Each segment's groups are flattened into a sequential physics list;
+      // we remember the slice sizes so we can reconstruct per-segment raw values.
+      const allGroups = segments.flatMap(s => s.parsed.groups);
+      let rawByGroupFlat; // [{ sides, values[] }] parallel to allGroups
+
+      if (box) {
+        if (removeRef.current) { clearTimeout(removeRef.current); removeRef.current = null; }
+        const mount = document.getElementById('dice-box');
+        if (mount) { mount.style.transition = 'none'; mount.style.opacity = '1'; }
+
+        const themeColor = getThemeColor();
+        if (themeColor !== colorRef.current) {
+          colorRef.current = themeColor;
+          try { await box.updateConfig?.({ themeColor }); } catch { /* non-fatal */ }
+        }
+
+        box.clear();
+        const physicsNotation = allGroups.map(g =>
+          g.isFudge ? `${g.count}d6` : `${g.count}d${g.sides}`
+        );
+        const rolled = await box.roll(physicsNotation);
+
+        const remaining = [...rolled];
+        rawByGroupFlat = allGroups.map((g) => {
+          const slice = remaining.splice(0, g.count);
+          if (g.isFudge) {
+            return { sides: 'F', values: slice.map(r => Math.floor((r.value - 1) / 2) - 1) };
+          }
+          return { sides: g.sides, values: slice.map(r => r.value) };
+        });
+
+        if (DICE_AUTOREMOVE_MS > 0) {
+          removeRef.current = setTimeout(fadeAndClear, DICE_AUTOREMOVE_MS);
+        }
+      } else {
+        // No physics box — generate in JS.
+        rawByGroupFlat = allGroups.map(g => ({
+          sides:  g.sides,
+          values: Array.from({ length: g.count }, () =>
+            g.isFudge
+              ? Math.floor(Math.random() * 3) - 1
+              : Math.floor(Math.random() * g.sides) + 1
+          ),
+        }));
+      }
+
+      // ── Phase 2: apply modifiers per segment ─────────────────────────────
+      // Walk rawByGroupFlat in order, consuming entries for each segment.
+      // After evaluating, if explode added extra dice we call box.add() so
+      // those extra rolls appear on the physics table too.
+      let flatIdx = 0;
+      const segmentResults = segments.map((seg) => {
+        const diceForSeg = {};
+        let segTotal = seg.parsed.modifier;
+
+        seg.parsed.groups.forEach((g) => {
+          const raw = rawByGroupFlat[flatIdx++];
+          const { values, total } = evaluateGroup(raw.values, raw.sides, g.modStr);
+          const key = g.isFudge ? 'dF' : `d${g.sides}`;
+          if (!diceForSeg[key]) diceForSeg[key] = [];
+          diceForSeg[key].push(...values);
+          segTotal += total;
+
+          // If evaluateGroup produced more values than we gave it (explode
+          // added dice), throw those extra ones on the physics table visually.
+          const extraCount = values.length - raw.values.length;
+          if (extraCount > 0 && box) {
+            const extraNotation = g.isFudge ? `${extraCount}d6` : `${extraCount}d${g.sides}`;
+            box.add(extraNotation).catch(() => {/* non-fatal */});
+          }
+        });
+
+        return { notation: seg.notation, dice: diceForSeg, modifier: seg.parsed.modifier, total: segTotal };
+      });
+
+      // For logging: combine all dice into one entry (multi-roll logged as one
+      // row with the full notation as source, totals shown in the label).
+      const combinedDice = {};
+      for (const seg of segmentResults) {
+        for (const [k, v] of Object.entries(seg.dice)) {
+          if (!combinedDice[k]) combinedDice[k] = [];
+          combinedDice[k].push(...v);
+        }
+      }
+      const grandTotal = segmentResults.reduce((a, s) => a + s.total, 0);
+
+      setResult({
+        segments:  segmentResults,           // array when multi-roll
+        groups:    combinedDice,             // flat dict for single-roll compat
+        modifier:  segments.length === 1 ? segments[0].parsed.modifier : 0,
+        total:     grandTotal,
+        label:     notationStr,
+        isMulti:   segments.length > 1,
+      });
+      logRoll(combinedDice, segments.length === 1 ? segments[0].parsed.modifier : 0, grandTotal, notationStr);
+
+      return { total: grandTotal };
+    } catch (e) {
+      console.error('[dice] command roll failed:', e);
+      return { error: e.message };
+    } finally {
+      setRolling(false);
+    }
+  }, [rolling, fadeAndClear, logRoll]);
+
+  // Expose rollFromNotation to CharacterSheet via the forwarded ref.
+  // CharacterSheet passes it down to RollLog as onRollCommand.
+  useImperativeHandle(ref, () => ({ rollFromNotation }), [rollFromNotation]);
 
   // ── Styles (inline, app CSS variables to match sheet chrome) ───────────────
   // Rail dimensions are ~10% smaller than the original tray.
@@ -344,7 +507,7 @@ export default function DiceTray({ open, onClose, sheetId, characterId, onAvaila
           {notationLabel || '—'}
         </div>
 
-        {/* Roll + Clear */}
+        {/* Roll + Clear/Log row */}
         <button type="button" onClick={roll} disabled={poolCount === 0 || rolling}
           style={{ height: 36, borderRadius: 6, cursor: poolCount === 0 ? 'default' : 'pointer',
             border: '1px solid var(--accent, #b48c3c)',
@@ -353,10 +516,26 @@ export default function DiceTray({ open, onClose, sheetId, characterId, onAvaila
             opacity: poolCount === 0 ? 0.45 : 1, letterSpacing: '0.05em' }}>
           {rolling ? '…' : 'Roll'}
         </button>
-        <button type="button" onClick={clearPool}
-          style={{ border: 'none', background: 'none', color: 'var(--text-dim)', cursor: 'pointer',
-            fontFamily: 'var(--font-mono)', fontSize: '0.62rem', letterSpacing: '0.1em',
-            textTransform: 'uppercase' }}>Clear</button>
+
+        {/* Bottom utility row: clear dice | open log.
+            Ghost-styled (no box) so they read as secondary controls — the boxed
+            look would compete with the die buttons above. */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 2, justifyContent: 'space-around' }}>
+          <button type="button" onClick={clearPool} title="Clear dice"
+            aria-label="Clear dice"
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+              padding: 4, color: 'var(--text-dim)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ClearDiceIcon size={20} />
+          </button>
+          <button type="button" onClick={onLogOpen} title="Roll log"
+            aria-label="Roll log"
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+              padding: 4, color: 'var(--text-dim)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <LogIcon size={20} />
+          </button>
+        </div>
       </div>
 
       {/* Floating result — near where the dice land (screen centre). */}
@@ -367,26 +546,73 @@ export default function DiceTray({ open, onClose, sheetId, characterId, onAvaila
             background: 'var(--bg-surface)', border: '1px solid var(--accent, #b48c3c)',
             borderRadius: 8, padding: '12px 18px', minWidth: 140, textAlign: 'center',
             boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
-          {Object.entries(result.groups)
-            .sort((a, b) => parseInt(a[0].slice(1), 10) - parseInt(b[0].slice(1), 10))
-            .map(([die, vals]) => (
-              <div key={die} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem',
-                color: 'var(--text-dim)' }}>
-                {die}: {vals.join(', ')}
-              </div>
-            ))}
-          {result.modifier !== 0 && (
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-              mod {result.modifier > 0 ? `+${result.modifier}` : result.modifier}
+          {/* Notation label — shown for command-bar rolls */}
+          {result.label && (
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem',
+              color: 'var(--text-dim)', marginBottom: 6, letterSpacing: '0.05em' }}>
+              {result.label}
             </div>
           )}
-          <div style={{ marginTop: 4, fontFamily: 'var(--font-display)', fontWeight: 700,
-            fontSize: '1.8rem', color: 'var(--text-accent)', lineHeight: 1 }}>
-            {result.total}
-          </div>
+
+          {result.isMulti ? (
+            /* Multi-roll: show each segment's notation + dice + total separately */
+            <div style={{ display: 'flex', gap: 0, alignItems: 'stretch', justifyContent: 'center' }}>
+              {result.segments.map((seg, i) => (
+                <div key={i} style={{
+                  minWidth: 60, padding: '0 12px',
+                  borderRight: i < result.segments.length - 1 ? '1px solid var(--border)' : 'none',
+                }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem',
+                    color: 'var(--text-dim)', marginBottom: 2 }}>
+                    {seg.notation}
+                  </div>
+                  {Object.entries(seg.dice)
+                    .sort((a, b) => parseInt(a[0].slice(1), 10) - parseInt(b[0].slice(1), 10))
+                    .map(([die, vals]) => (
+                      <div key={die} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem',
+                        color: 'var(--text-dim)' }}>
+                        {die}: {vals.join(', ')}
+                      </div>
+                    ))}
+                  {seg.modifier !== 0 && (
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--text-dim)' }}>
+                      mod {seg.modifier > 0 ? `+${seg.modifier}` : seg.modifier}
+                    </div>
+                  )}
+                  <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700,
+                    fontSize: '1.6rem', color: 'var(--text-accent)', lineHeight: 1, marginTop: 2 }}>
+                    {seg.total}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            /* Single roll: original layout */
+            <>
+              {Object.entries(result.groups)
+                .sort((a, b) => parseInt(a[0].slice(1), 10) - parseInt(b[0].slice(1), 10))
+                .map(([die, vals]) => (
+                  <div key={die} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem',
+                    color: 'var(--text-dim)' }}>
+                    {die}: {vals.join(', ')}
+                  </div>
+                ))}
+              {result.modifier !== 0 && (
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                  mod {result.modifier > 0 ? `+${result.modifier}` : result.modifier}
+                </div>
+              )}
+              <div style={{ marginTop: 4, fontFamily: 'var(--font-display)', fontWeight: 700,
+                fontSize: '1.8rem', color: 'var(--text-accent)', lineHeight: 1 }}>
+                {result.total}
+              </div>
+            </>
+          )}
         </div>
       )}
     </>,
     document.body
   );
-}
+});
+
+export default DiceTray;

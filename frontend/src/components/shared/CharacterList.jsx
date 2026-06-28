@@ -4,7 +4,7 @@ import ActionMenu from './ActionMenu';
 import ShareModal from './ShareModal';
 import { THEMES, applyTheme } from '../../theme';
 import { GearIcon, SwordsIcon, PaletteIcon, SignOutIcon, ShareIcon,
-         SkullIcon, BoxIcon, PauseIcon, SunsetIcon, PlayIcon, SearchIcon } from './Icons';
+         SkullIcon, BoxIcon, PauseIcon, SunsetIcon, PlayIcon, SearchIcon, DiceIcon } from './Icons';
 import VersionTag from './VersionTag';
 import ExportStage from '../ExportStage';   // adjust if your tree differs — same folder as SheetRenderer.jsx
 import { Toast } from './UI';           // wherever UI.jsx actually lives for this file
@@ -490,10 +490,46 @@ function sortChars(list, sortBy) {
   return sorted;
 }
 
+// Dice size picker — same row-of-buttons shape as ThemeSwatches/SortOptions for
+// consistency, but the button content is a scaled die glyph so the "bigger"
+// meaning is conveyed visually rather than only by the label.
+const DICE_SIZE_OPTIONS = [
+  { value: 1, label: 'Tiny',   iconSize: 14 },
+  { value: 2, label: 'Small',  iconSize: 18 },
+  { value: 3, label: 'Normal', iconSize: 22 },
+  { value: 4, label: 'Large',  iconSize: 26 },
+  { value: 5, label: 'Huge',   iconSize: 30 },
+];
+
+function DiceSizeOptions({ value, onPick }) {
+  return (
+    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'stretch' }}>
+      {DICE_SIZE_OPTIONS.map(({ value: key, label, iconSize }) => {
+        const active = value === key;
+        return (
+          <button key={key} type="button" onClick={() => onPick(key)}
+            title={label} aria-label={label}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              minWidth: 44, height: 44, padding: '0.3rem 0.5rem',
+              borderRadius: '2px', cursor: 'pointer',
+              border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+              background: active ? 'var(--accent-glow)' : 'var(--bg-raised)',
+              color: active ? 'var(--text-accent)' : 'var(--text-secondary)',
+            }}>
+            <DiceIcon size={iconSize} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // Personal theme picker — available to every user from the header menu.
 function AppearanceModal({ user, onUser, onClose }) {
   const [theme, setTheme]   = useState(user?.theme  || 'tavern');
   const [sortBy, setSortBy] = useState(user?.sortBy || 'updatedAt');
+  const [diceScale, setDiceScale] = useState(user?.diceScale ?? 3);
 
   const pick = async (key) => {
     setTheme(key);
@@ -508,6 +544,12 @@ function AppearanceModal({ user, onUser, onClose }) {
     await api.setMySortBy(key);                        // persist to this user's record
   };
 
+  const pickDiceScale = async (val) => {
+    setDiceScale(val);
+    onUser?.(u => ({ ...(u || {}), diceScale: val }));
+    await api.setMyDiceScale(val);
+  };
+
   return (
     <Modal title="Appearance" subtitle="Your Theme" onClose={onClose} hideCancel
       footer={<button className="btn-ghost" onClick={onClose}>Close</button>}>
@@ -520,6 +562,11 @@ function AppearanceModal({ user, onUser, onClose }) {
         Sort Characters By
       </div>
       <SortOptions value={sortBy} onPick={pickSort} />
+
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.12em', textTransform: 'uppercase', margin: '1.25rem 0 0.5rem' }}>
+        Dice Size
+      </div>
+      <DiceSizeOptions value={diceScale} onPick={pickDiceScale} />
     </Modal>
   );
 }

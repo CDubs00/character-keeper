@@ -838,6 +838,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     player:   user.player   || false,
     theme:    user.theme  || getSettings().theme || 'tavern',
     sortBy:   user.sortBy || 'updatedAt',
+    diceScale: user.diceScale ?? 3,
   };
   res.json(req.session.user);
 });
@@ -855,6 +856,8 @@ app.get('/api/me', (req, res) => {
 // PUT /api/me/preferences — a logged-in user updates their OWN preferences.
 //   body: { theme, sortBy }
 const VALID_SORT_BY = new Set(['updatedAt', 'name']);
+const DICE_SCALE_MIN = 1;
+const DICE_SCALE_MAX = 5;
 
 app.put('/api/me/preferences', requireAuth, (req, res) => {
   const users = getUsers();
@@ -876,8 +879,22 @@ app.put('/api/me/preferences', requireAuth, (req, res) => {
     req.session.user.sortBy = sortBy;
   }
 
+  if ('diceScale' in req.body) {
+    // Clamp to the valid integer range; non-numeric input defaults to 3.
+    const raw   = parseInt(req.body.diceScale, 10);
+    const scale = Number.isNaN(raw)
+      ? 3
+      : Math.max(DICE_SCALE_MIN, Math.min(DICE_SCALE_MAX, raw));
+    user.diceScale = scale;
+    req.session.user.diceScale = scale;
+  }
+
   saveUsers(users);
-  res.json({ theme: req.session.user.theme, sortBy: req.session.user.sortBy });
+  res.json({
+    theme:     req.session.user.theme,
+    sortBy:    req.session.user.sortBy,
+    diceScale: req.session.user.diceScale,
+  });
 });
 
 // ---------------------------------------------------------------------------
