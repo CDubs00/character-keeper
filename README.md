@@ -65,6 +65,23 @@ Just know the design decisions are mine.
 <img src="screenshots/Search.png" alt="Alt Text" style="width:50%; height:auto;">
 <img src="screenshots/User Apperance Modal.png" alt="Alt Text" style="width:50%; height:auto;">
 
+
+# Dice Command-bar rolls
+
+Typed notation now triggers physics dice plus full modifier math. Live in the Roll Log panel: type something like `2d20kh1+5`, press Enter, dice tumble on screen, total resolves with all modifiers applied. The notation string is logged as the roll's `source`.
+
+## Notation supported
+
+| Category | Syntax | Description |
+|---|---|---|
+| Keep/Drop | `kh` `kl` `dh` `dl` N | Keep/drop highest/lowest N dice |
+| Reroll | `r` `rr` N | Reroll N once / recursively |
+| Explode | `x` `xo` `x`N | Explode on max indefinitely / once / up to N times |
+| Successes | `cs` `cf` `df` >=N | Count successes/failures, deduct failures |
+| Bounds | `min` `max` N | Clamp individual die results |
+| Fate | `dF` | Fudge dice (-1, 0, +1) |
+| Multi-roll | `/` | Roll segments independently with separate totals (e.g. `1d6x/1d6x`) |
+
 ## Quick start
 
 ```bash
@@ -256,7 +273,6 @@ Roughly in order, dependency and time permitting:
 - **Standalone HTML export** — bake a character plus its template into one portable file you can open without the app.  
 - **Character Ownership transfers** - Allow a user to transfer a character then own to another User/Admin. 
 - **Admin login-history log** - Build in a viewable log for the admin to monitor session logins from users and shares.
-- **User Die Size Setting Override** - Allow users to set thier own die size on a scale. 
 - **Add d2/coin-flip** - Dice-Box currently doesnt have a d2 or Coin render so I am attempting on figuring out how to add one. 
 
 ## Why it's built the way it is
