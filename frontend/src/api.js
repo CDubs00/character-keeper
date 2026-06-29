@@ -123,6 +123,13 @@ export const api = {
   async deleteAttachment(id, key) {
     return handle(await fetchWithRetry(`${BASE}/api/characters/${id}/attachments/${key}`, { method: 'DELETE' }));
   },
+  async updateAttachment(id, key, text) {
+    return handle(await fetchWithRetry(`${BASE}/api/characters/${id}/attachments/${key}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: text,
+    }));
+  },
   async deletePortrait(id) {
   return handle(await fetchWithRetry(`${BASE}/api/characters/${id}/portrait`, { method: 'DELETE' }));
   },
@@ -231,6 +238,9 @@ export const api = {
   },
   async refreshSheets() {
     return handle(await fetchWithRetry(`${BASE}/api/sheets/refresh`, { method: 'POST' }));
+  },
+  async getLogs() {
+    return handle(await fetchWithRetry(`${BASE}/api/admin/logs`));
   },
   async getSheetSchema(sheetId) {
     return handle(await fetchWithRetry(`${BASE}/api/sheets/${sheetId}/schema`));

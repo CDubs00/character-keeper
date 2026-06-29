@@ -58,6 +58,13 @@ async function buildExportZip(base, tabs, char, rolls) {
   const rollsMd = buildRollsMarkdown(rolls);
   if (rollsMd.trim()) files[`${base}-rolls.md`] = strToU8(rollsMd);
 
+  // Portable standalone HTML — baked-in character data + bundle template.
+  // Silently skipped if the bundle fetch fails (zip still completes without it).
+  try {
+    const htmlString = await buildPortableHtml(char, base);
+    if (htmlString) files[`${base}-sheet.html`] = strToU8(htmlString);
+  } catch { /* non-fatal */ }
+
   // Attachments. The manifest (char.attachments, a built-in sidecar) lists them;
   // fetch each blob from its authenticated URL and drop it under attachments/ with
   // its real filename. The server-side export does the same — this client export
@@ -143,6 +150,369 @@ function buildRollsMarkdown(rolls) {
   };
 
   return ['## Roll Log', '', ...list.map(line)].join('\n') + '\n';
+}
+
+// ─── Portable standalone HTML export ─────────────────────────────────────────
+// Builds a single self-contained HTML file with the bundle template + character
+// data baked in. A small vanilla-JS runtime fills data-bind / data-list / widget
+// attributes on DOMContentLoaded — no server required to view it.
+async function buildPortableHtml(char, base) {
+  const sheetId = char.sheetId;
+
+  // Fetch the bundle template files
+  let sheetHtml = '', themeCss = '';
+  try {
+    [sheetHtml, themeCss] = await Promise.all([
+      fetch(`/api/sheets/${sheetId}/sheet.html`, { credentials: 'include' }).then(r => r.ok ? r.text() : ''),
+      fetch(`/api/sheets/${sheetId}/theme.css`,  { credentials: 'include' }).then(r => r.ok ? r.text() : ''),
+    ]);
+  } catch { return null; }
+  if (!sheetHtml) return null;
+
+  // Resolve %ASSETS% → relative server path (logos/icons remain accessible while
+  // on the same network; the sheet data itself is fully offline-capable).
+  const assetBase = `/api/sheets/${sheetId}/assets`;
+  sheetHtml = sheetHtml.split('%ASSETS%').join(assetBase);
+  themeCss  = themeCss.split('%ASSETS%').join(assetBase);
+
+  // Extract the <body> inner content so we don't get a nested <html> document.
+  const bodyMatch = sheetHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  const sheetBody = bodyMatch ? bodyMatch[1].trim() : sheetHtml;
+
+  // Embed portrait as a base64 data-URL so the file is self-contained for images.
+  let portraitDataUrl = '';
+  if (char.portrait) {
+    try {
+      const res = await fetch(char.portrait, { credentials: 'include' });
+      if (res.ok) {
+        const blob = await res.blob();
+        portraitDataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload  = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch { /* portrait is optional */ }
+  }
+
+  // Embed the character data (sessions omitted — they're in the .md sidecar;
+  // attachments omitted — they're in the attachments/ folder).
+  const { sessions: _s, attachments: _a, ...envelope } = char;
+  const charData = { ...envelope, _portraitDataUrl: portraitDataUrl };
+  const charJson = JSON.stringify(charData);
+
+  const charName  = char.info?.name || base;
+  const sheetName = char.sheetName || 'Character Sheet';
+
+  // ── Widget + page CSS injected before the bundle's own theme.css ────────────
+  const pageAndWidgetCss = `
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; padding: 1rem; }
+
+/* Tracker / toggle / XP bubbles */
+.tracker { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
+.tracker-bubble { width: 12px; height: 12px; border-radius: 50%; border: 1px solid currentColor; display: inline-block; cursor: default; }
+.tracker-bubble.filled { background: currentColor; }
+.conviction-bubble { width: 14px; height: 14px; border-radius: 50%; border: 1px solid currentColor; display: inline-block; cursor: default; }
+.conviction-bubble.filled { background: currentColor; }
+.xp-track { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+.xp-bubble { width: 10px; height: 10px; border-radius: 50%; border: 1px solid currentColor; display: inline-block; }
+.xp-bubble.filled { background: currentColor; }
+.die-selector-export .die-static { font-family: var(--font-mono, monospace); font-size: 0.9em; font-weight: 700; }
+
+/* Disabled inputs — blend into the sheet visually */
+input[disabled], select[disabled] {
+  background: transparent !important; border: none !important;
+  color: inherit !important; opacity: 1 !important;
+  -webkit-text-fill-color: currentColor; pointer-events: none;
+}
+
+/* Markdown / textarea render target */
+.cf-export-text { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+.cf-export-text p  { margin: 0.3em 0; }
+.cf-export-text ul, .cf-export-text ol { padding-left: 1.4em; margin: 0.3em 0; }
+
+/* Hide interactive chrome that has no meaning in a static export */
+[data-action="add"], [data-action="remove"], .add-btn,
+.cf-md-toggle, .portrait-remove, .cf-info-btn,
+.cf-collapsible-caret { display: none !important; }
+
+/* Tab bar — base styles; bundle theme.css layers on top */
+.cf-tab-bar {
+  display: flex; flex-wrap: wrap; gap: 0.25rem;
+  border-bottom: 1px solid var(--border, #444);
+  margin-bottom: 0.5rem;
+}
+.cf-tab-btn {
+  padding: 0.55rem 0.9rem; cursor: pointer;
+  background: transparent; border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim, #888);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+  transition: color 0.12s;
+  margin-bottom: -1px;
+}
+.cf-tab-btn.active {
+  border-bottom-color: var(--accent, #b8924a);
+  color: var(--text-accent, #c9a96e);
+}
+
+/* Collapsible — always-open static rendering */
+.cf-collapsible-header {
+  display: flex; align-items: center; pointer-events: none;
+  background: none; border: none; color: inherit; font: inherit;
+  width: 100%; text-align: left; padding: 0; cursor: default;
+}
+.cf-collapsible[data-open="true"]  .cf-collapsible-body { display: block; }
+.cf-collapsible[data-open="false"] .cf-collapsible-body { display: none; }
+
+
+/* Horizontal scroll for wide tables */
+.cf-table-scroll { overflow-x: auto; }
+
+/* Portrait */
+.portrait-area { cursor: default !important; }
+`;
+
+  // ── Vanilla-JS runtime ───────────────────────────────────────────────────────
+  // Runs on DOMContentLoaded. Walks .sheet-root and fills every data-bind,
+  // expands data-list templates, builds collapsibles / tabs in export layout,
+  // and converts interactive widgets (toggle, tracker, die…) to static HTML.
+  const runtimeJs = `(function(){
+var CHAR=${charJson};
+
+function resolve(obj,path){
+  return path.split('.').reduce(function(o,k){return o!=null?o[k]:undefined;},obj);
+}
+function esc(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function mdToHtml(text){
+  if(!text||!String(text).trim())return '';
+  var lines=String(text).replace(/\\r\\n?/g,'\\n').split('\\n');
+  var html='',para=[],list=null,ordered=false;
+  function inline(s){
+    return esc(s)
+      .replace(/\\*\\*(.*?)\\*\\*/g,'<strong>$1</strong>')
+      .replace(/__(.*?)__/g,'<strong>$1</strong>')
+      .replace(/\\*(.*?)\\*/g,'<em>$1</em>')
+      .replace(/_(.*?)_/g,'<em>$1</em>');
+  }
+  function flushPara(){if(para.length){html+='<p>'+para.map(inline).join('<br>')+'</p>';para=[];}}
+  function flushList(){if(list){html+=(ordered?'<ol>':'<ul>')+list.map(function(i){return'<li>'+inline(i)+'</li>';}).join('')+(ordered?'</ol>':'</ul>');list=null;}}
+  lines.forEach(function(raw){
+    var line=raw.replace(/\\s+$/,'');
+    var bullet=/^\\s*[-*+]\\s+(.*)$/.exec(line);
+    var num=/^\\s*\\d+\\.\\s+(.*)$/.exec(line);
+    if(bullet||num){flushPara();var isOrd=!!num;if(!list||ordered!==isOrd){flushList();list=[];ordered=isOrd;}list.push(bullet?bullet[1]:num[1]);}
+    else if(!line.trim()){flushPara();flushList();}
+    else{flushList();para.push(line);}
+  });
+  flushPara();flushList();
+  return html;
+}
+
+function fillNode(node,data){
+  if(!node||node.nodeType!==1)return;
+  var tag=node.tagName.toLowerCase();
+  if(tag==='script'||tag==='style')return;
+
+  // Hide interactive action buttons
+  var action=node.getAttribute('data-action');
+  if(action==='add'||action==='remove'||action==='info'){node.style.display='none';return;}
+  if(node.hasAttribute('data-md-toggle')){node.style.display='none';return;}
+
+  // data-tabs → interactive tab bar (skipped tabs excluded)
+  if(node.hasAttribute('data-tabs')){
+    var tabPanels=[].filter.call(node.children,function(n){
+      return n.hasAttribute('data-tab')&&!n.hasAttribute('data-export-skip');
+    });
+    node.classList.add('cf-tabs');
+    while(node.firstChild)node.removeChild(node.firstChild);
+    var tabBar=document.createElement('div');
+    tabBar.className='cf-tab-bar';
+    tabBar.setAttribute('role','tablist');
+    node.appendChild(tabBar);
+    var builtPanels=[];
+    tabPanels.forEach(function(panel,i){
+      var label=panel.getAttribute('data-tab')||('Tab '+(i+1));
+      var panelCls=panel.getAttribute('class')||'';
+      // Tab button
+      var btn=document.createElement('button');
+      btn.type='button';btn.setAttribute('role','tab');
+      btn.className='cf-tab-btn'+(i===0?' active':'');
+      btn.setAttribute('aria-selected',i===0?'true':'false');
+      btn.textContent=label;
+      tabBar.appendChild(btn);
+      // Panel wrapper
+      var wrapper=document.createElement('div');
+      wrapper.setAttribute('role','tabpanel');
+      wrapper.className=['cf-tab-panel',panelCls].filter(Boolean).join(' ');
+      if(i!==0)wrapper.style.display='none';
+      while(panel.firstChild)wrapper.appendChild(panel.firstChild);
+      node.appendChild(wrapper);
+      [].slice.call(wrapper.childNodes).forEach(function(c){fillNode(c,data);});
+      builtPanels.push(wrapper);
+      btn.addEventListener('click',function(){
+        builtPanels.forEach(function(p,j){p.style.display=(j===i)?'':'none';});
+        [].forEach.call(tabBar.querySelectorAll('.cf-tab-btn'),function(b,j){
+          b.classList.toggle('active',j===i);
+          b.setAttribute('aria-selected',j===i?'true':'false');
+        });
+      });
+    });
+    return;
+  }
+
+  // data-collapsible → build open collapsible structure
+  if(node.hasAttribute('data-collapsible')&&!node.classList.contains('cf-collapsible')){
+    var colTitle=node.getAttribute('data-collapsible')||'';
+    var bindKey=node.getAttribute('data-collapsible-bind');
+    if(bindKey){var bv=resolve(data,bindKey)||'';if(bv)colTitle=(colTitle?colTitle+' — '+bv:bv);}
+    node.classList.add('cf-collapsible');
+    node.setAttribute('data-open','true');
+    var hdr=document.createElement('button');
+    hdr.className='cf-collapsible-header';hdr.type='button';
+    hdr.setAttribute('aria-expanded','true');hdr.disabled=true;
+    var ts=document.createElement('span');ts.className='cf-collapsible-title';ts.textContent=colTitle;
+    hdr.appendChild(ts);
+    var body=document.createElement('div');body.className='cf-collapsible-body';
+    while(node.firstChild)body.appendChild(node.firstChild);
+    node.appendChild(hdr);node.appendChild(body);
+    [].slice.call(body.childNodes).forEach(function(c){fillNode(c,data);});
+    return;
+  }
+
+  // data-md-group → recurse normally
+  if(node.hasAttribute('data-md-group')){
+    [].slice.call(node.childNodes).forEach(function(c){fillNode(c,data);});
+    return;
+  }
+
+  // data-list → clone template for each item
+  if(node.hasAttribute('data-list')){
+    var listPath=node.getAttribute('data-list');
+    var items=resolve(data,listPath);if(!Array.isArray(items))items=[];
+    var tmpl=null;
+    for(var ci=0;ci<node.children.length;ci++){if(node.children[ci].hasAttribute('data-item')){tmpl=node.children[ci];break;}}
+    if(tmpl){
+      while(node.firstChild)node.removeChild(node.firstChild);
+      items.forEach(function(item){
+        var clone=tmpl.cloneNode(true);clone.removeAttribute('data-item');
+        fillNode(clone,item);node.appendChild(clone);
+      });
+    }
+    return;
+  }
+
+  var dataType=node.getAttribute('data-type');
+  var bindPath=node.getAttribute('data-bind');
+
+  // Portrait widget
+  if(dataType==='portrait'){
+    var imgSrc=CHAR._portraitDataUrl||CHAR.portrait||'';
+    node.style.cursor='default';
+    if(imgSrc){
+      node.innerHTML='';
+      var img=document.createElement('img');
+      img.src=imgSrc;img.alt='Character portrait';
+      img.style.maxWidth='100%';img.style.maxHeight='100%';img.style.objectFit='cover';
+      node.appendChild(img);
+    }else{node.innerHTML='<span class="portrait-placeholder">No portrait<\\/span>';}
+    return;
+  }
+
+  if(bindPath){
+    var value=resolve(data,bindPath);
+
+    if(dataType==='readonly-name'){node.textContent=String(value!=null?value:'');return;}
+
+    if(dataType==='toggle'){if(value)node.classList.add('filled');return;}
+
+    if(dataType==='tracker'){
+      var maxBind=node.getAttribute('data-max-bind');
+      var maxV=maxBind?(parseInt(resolve(data,maxBind))||3):(parseInt(node.getAttribute('data-max')||'3'));
+      var tv=parseInt(value||0);
+      node.innerHTML='';node.classList.add('tracker');
+      for(var ti=1;ti<=maxV;ti++){var tb=document.createElement('div');tb.className='tracker-bubble'+(tv>=ti?' filled':'');node.appendChild(tb);}
+      return;
+    }
+
+    if(dataType==='xp-tracker'){
+      var xpMax=parseInt(node.getAttribute('data-max')||'30');var xpV=parseInt(value||0);
+      node.innerHTML='';var xpt=document.createElement('div');xpt.className='xp-track';
+      for(var xi=1;xi<=xpMax;xi++){var xb=document.createElement('div');xb.className='xp-bubble'+(xpV>=xi?' filled':'');xpt.appendChild(xb);}
+      node.appendChild(xpt);return;
+    }
+
+    if(dataType==='die'){
+      var dieVal=typeof value==='object'?(value&&value.die||'d4'):(value||'d4');
+      var dieBonus=typeof value==='object'?(value&&value.bonus||0):0;
+      node.innerHTML='';node.classList.add('die-selector-export');
+      var ds=document.createElement('span');ds.className='die-static';
+      ds.textContent=dieVal+(dieBonus?'+'+dieBonus:'');node.appendChild(ds);return;
+    }
+
+    if(dataType==='stepper'){
+      node.innerHTML='';var sp=document.createElement('span');sp.textContent=String(value!=null?value:0);node.appendChild(sp);return;
+    }
+
+    if(dataType==='markdown'){
+      var mdDiv=document.createElement('div');mdDiv.className='cf-export-text';mdDiv.innerHTML=mdToHtml(value);
+      if(node.parentNode)node.parentNode.replaceChild(mdDiv,node);return;
+    }
+
+    if(dataType==='rank-badge'||dataType==='attr-badge'){node.textContent=String(value!=null?value:'');return;}
+
+    if(dataType==='autofit'){
+      if(tag==='input'){node.value=String(value!=null?value:'');node.setAttribute('disabled','disabled');}
+      return;
+    }
+
+    // Standard input / select
+    if(tag==='input'||tag==='select'){
+      if(node.type==='checkbox')node.checked=!!value;
+      else node.value=String(value!=null?value:'');
+      node.setAttribute('disabled','disabled');return;
+    }
+    // Textarea → static div
+    if(tag==='textarea'){
+      var taDiv=document.createElement('div');taDiv.className='cf-export-text';taDiv.textContent=String(value!=null?value:'');
+      if(node.parentNode)node.parentNode.replaceChild(taDiv,node);return;
+    }
+    // Generic bound element (div, span, etc.)
+    node.textContent=String(value!=null?value:'');return;
+  }
+
+  // No binding — recurse into children
+  [].slice.call(node.childNodes).forEach(function(c){fillNode(c,data);});
+}
+
+document.addEventListener('DOMContentLoaded',function(){
+  [].forEach.call(document.querySelectorAll('.sheet-root'),function(root){fillNode(root,CHAR);});
+});
+})();`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${charName.replace(/</g,'&lt;')} — ${sheetName.replace(/</g,'&lt;')}</title>
+<style>
+${pageAndWidgetCss}
+${themeCss}
+</style>
+</head>
+<body>
+<div class="sheet-root" style="container-type:inline-size;container-name:sheet">
+${sheetBody}
+</div>
+<script>${runtimeJs}<\/script>
+</body>
+</html>`;
 }
 
 // const handleExportSessions = async (c) => {
@@ -588,6 +958,7 @@ function AdminTabs({ active, onChange }) {
     { id: 'settings', label: 'Settings' },
     { id: 'users',    label: 'Users'    },
     { id: 'sheets',   label: 'Sheets'   },
+    { id: 'logs',     label: 'Logs'     },
   ];
   return (
     <div role="tablist" style={{
@@ -1090,6 +1461,148 @@ function AdminSheetsTab({ setError }) {
   );
 }
 
+// ── Logs tab ───────────────────────────────────────────────────────────────
+function AdminLogsTab() {
+  const [logins,        setLogins]        = useState([]);
+  const [shareAccesses, setShareAccesses] = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [subtab,        setSubtab]        = useState('logins');
+
+  useEffect(() => {
+    api.getLogs().then(data => {
+      if (data && !data.error) {
+        setLogins(Array.isArray(data.logins) ? data.logins : []);
+        setShareAccesses(Array.isArray(data.shareAccesses) ? data.shareAccesses : []);
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  const fmtDate = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+  };
+
+  const fmtMyDate = (iso) => {
+  if (!iso) return "—";
+
+  const d = new Date(iso);
+
+  const yyyy = d.getFullYear();
+  const MM = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+
+  let hh = d.getHours();
+  const tt = hh >= 12 ? "PM" : "AM";
+  hh = hh % 12 || 12;
+
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+
+  return `${yyyy}.${MM}.${dd} ${String(hh).padStart(2, "0")}:${mm}:${ss} ${tt}`;
+};
+
+  const thStyle = {
+    fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)',
+    letterSpacing: '0.1em', textTransform: 'uppercase', padding: '0.4rem 0.6rem',
+    textAlign: 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap',
+    background: 'var(--bg-surface)', position: 'sticky', top: 0,
+  };
+  const tdStyle = {
+    fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-primary)',
+    padding: '0.4rem 0.6rem', borderBottom: '1px solid var(--border)',
+  };
+  const tdDimStyle = { ...tdStyle, color: 'var(--text-dim)', fontSize: '0.72rem' };
+
+  const subtabs = [
+    { id: 'logins',        label: `Logins (${logins.length})`               },
+    { id: 'shareAccesses', label: `Share Accesses (${shareAccesses.length})` },
+  ];
+
+  return (
+    <div>
+      {/* Sub-tab switcher */}
+      <div style={{ display: 'flex', gap: '0.25rem', borderBottom: '1px solid var(--border)', marginBottom: '0.75rem' }}>
+        {subtabs.map(s => {
+          const active = s.id === subtab;
+          return (
+            <button key={s.id} type="button" onClick={() => setSubtab(s.id)} style={{
+              padding: '0.4rem 0.75rem', cursor: 'pointer', background: 'transparent', border: 'none',
+              borderBottom: '2px solid ' + (active ? 'var(--accent)' : 'transparent'),
+              color: active ? 'var(--text-accent)' : 'var(--text-dim)',
+              fontFamily: 'var(--font-mono)', fontSize: '0.75rem',
+              transition: 'color 0.12s',
+            }}>
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {loading ? (
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.85rem' }}>Loading…</div>
+      ) : (
+        <div style={{ border: '1px solid var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '11.5rem' }}>
+          {subtab === 'logins' && (
+            logins.length === 0 ? (
+              <div style={{ padding: '1rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>No logins recorded yet.</div>
+            ) : (
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '15rem' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Username</th>
+                    <th style={thStyle}>Date / Time</th>
+                    <th style={thStyle}>IP Address</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logins.map((e, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-raised)' }}>
+                      <td style={tdStyle}>{e.username}</td>
+                      <td style={tdDimStyle}>{fmtMyDate(e.at)}</td>
+                      <td style={tdDimStyle}>{e.ip || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+
+          {subtab === 'shareAccesses' && (
+            shareAccesses.length === 0 ? (
+              <div style={{ padding: '1rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>No share-link accesses recorded yet.</div>
+            ) : (
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '25rem' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Shared By</th>
+                    <th style={thStyle}>Character</th>
+                    <th style={thStyle}>Date / Time</th>
+                    <th style={thStyle}>IP Address</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shareAccesses.map((e, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-raised)' }}>
+                      <td style={tdStyle}>{e.sharedBy}</td>
+                      <td style={tdStyle}>{e.character}</td>
+                      <td style={tdDimStyle}>{fmtMyDate(e.at)}</td>
+                      <td style={tdDimStyle}>{e.ip || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+        </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Shell ──────────────────────────────────────────────────────────────────
 function AdminModal({ currentUser, onClose }) {
   const [tab,      setTab]      = useState('settings');
@@ -1106,7 +1619,7 @@ function AdminModal({ currentUser, onClose }) {
   return (
     <Modal
       title="Admin Panel"
-      subtitle="Settings · Users · Sheets"
+      subtitle="Settings"
       onClose={onClose}
       hideCancel
       footer={<button className="btn-ghost" onClick={onClose}>Close</button>}
@@ -1125,6 +1638,9 @@ function AdminModal({ currentUser, onClose }) {
       )}
       {tab === 'sheets' && (
         <AdminSheetsTab setError={setError} />
+      )}
+      {tab === 'logs' && (
+        <AdminLogsTab />
       )}
     </Modal>
   );

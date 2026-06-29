@@ -25,23 +25,20 @@ Just know the design decisions are mine.
 - **Game systems are "bundles," not hard coded.** A bundle is just a folder with four files (layout, fields, styling, metadata). Drop it into the `bundles` directory, refresh, and the system shows up. Adding D&D 5e didn't require touching the app. New system = new folder, not a new release. I designed it this way to encurage community growth of the sheets. Im sure people with better ideas or more skills then me can come up with amazing sheets to share with others. 
     - **HTML-template sheets.** A bundle's layout is plain HTML wired to live data through `data-*` attributes. A single recursive renderer reads those attributes and binds them to state, so there's no custom React component per game.
     - Here is a place to share: [Character Sheet Bundles](https://github.com/CDubs00/character-keeper/discussions/15)
-- **Roles and visibility.** Every account is some mix of `admin` / `gm` /
-  `player`. Players see their own characters. GMs see characters tagged to
-  campaigns they run. Admins see the user list and settings.
+- **Roles and visibility.** Every account is some mix of `admin` / `gm` / `player`. Players see their own characters. GMs see characters tagged to campaigns they run. Admins see the user list and settings.
 - **Campaigns with join codes.** A GM makes a campaign and gets a short human code. Players opt in by tagging their own character to that code — nobody gets pulled into a campaign without their say-so. Once added, the GM of that campaign has read access to that character. all characters part of that campaign are grouped. 
 - **Share links.** Generate a public read or read/write link for a single
   character, with an experation you pick. No login needed to open it. Editable links autosave just like the real sheet.
 - **Global search.** Search across every character you can see — including their session notes, from one box. It respects the same visibility rules as the roster, so it never surfaces a sheet you aren't allowed to open. Searchable fields within the sheets are dicated by the Bundles author. 
-- **Dice + a roll log.** Bundles can dicate visible die types in the dice tray otherwise the standard [d4, d6, d8, d10, d12, d20, d100] will apply.  Every throw gets logged per character (newest first, last 50 kept) so you've got a little history of how the dice have been treating you.
+- **Dice + a roll log.** Bundles can dicate visible die types in the dice tray otherwise the standard [d4, d6, d8, d10, d12, d20, d100] will apply. Also avaliabe is a Dice Command bar, that allows the user to roll dice via notation with expanded logic (i.e. Exploding, Drop Low/High, Multiroll with seperate totals). Every throw gets logged per character (newest first, last 50 kept) so you've got a little history of how the dice have been treating you. 
 - **Session notes.** Date-stamped notes that live with the character (in their own file, so they don't fight with autosave). A bundle turns them on by declaring it in its schema.
-- **File attachments.** Keep handouts, backstory PDFs, a loot spreadsheet, or a map alongside a character. Off by default; an admin flips it on. There's real security work behind this one.
-- **Export.** Download a character as a file. If it's just the sheet you get raw JSON and a image of each tab and session notes, if any, are exported as markdown; if it has a portrait or attachments you get a tidy ZIP with everything, attachments restored to their real filenames.
-- **Archive and life-status.** Characters can be `active`, `inactive`, `deceased`, `retired`, `shelved`, or `archived`. Any character that is not `active` drop into collapsible sections instead of cluttering the roster, you can change status or restore anytime.
-- **Admin panel.** Create users, toggle roles, reset passwords, delete accounts, and set app-wide settings (default theme, whether external links are allowed in sheets, whether attachments are active).
-- **Themes.** Six app themes — Tavern, Arcane, Verdant, Ember, Frost, and In The Grey. Each user picks their own; the admin sets the default for share pages and new accounts. A bundle's own sheet styling is separate from this.
 - **Portraits.** Per-character image upload that gets cleaned up on delete and follows the character on rename.
-- **Installable (PWA).** Manifest and icons, so it can live as an app on your
-  phone or desktop.
+- **File attachments.** Keep handouts, backstory PDFs, a loot spreadsheet, or a map alongside a character. Markdown files visualize using *GitHub Flavored Markdown (GFM)*. If the attachment is a .txt or .md file users can edit dirently in app. This feature is off by default; an admin turns it on in the admin panel. There's real security work behind this one.
+- **Export.** Download a character as a file. If it's just the sheet you get raw JSON, a image of each tab, a selfcontained HTML file and session notes, if any, are exported as markdown. If it has a portrait or attachments you get a tidy ZIP with everything, attachments restored to their real filenames.
+- **Archive and life-status.** Characters can be `active`, `inactive`, `deceased`, `retired`, `shelved`, or `archived`. Any character that is not `active` drop into collapsible sections instead of cluttering the roster, you can change status or restore anytime.
+- **Admin panel.** Create users, toggle roles, reset passwords, delete accounts, see user session logins and set app-wide settings (default theme, whether external links are allowed in sheets, whether attachments are active).
+- **Themes.** Seven app themes — Tavern, Arcane, Verdant, Ember, Frost, In The Grey and Rose. Each user can pick their own; the admin sets the default for shared pages and new accounts. A bundle's own sheet styling is separate from this.
+- **Installable (PWA).** Manifest and icons, so it can live as an app on your phone or desktop.
 
 #### Desktop
 <img src="screenshots/Desktop - Character List.png" alt="Alt Text" style="width:75%; height:auto;">
@@ -60,17 +57,18 @@ Just know the design decisions are mine.
 <img src="screenshots/Admin Modal - Bundle Managment.png" alt="Alt Text" style="width:50%; height:auto;">
 <img src="screenshots/Admin Modal - Settings.png" alt="Alt Text" style="width:50%; height:auto;">
 <img src="screenshots/Admin Modal - Users.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/Admin_Modal_Logs.png" alt="Alt Text" style="width:50%; height:auto;">
 <img src="screenshots/Archive Modal.png" alt="Alt Text" style="width:50%; height:auto;">
 <img src="screenshots/Dice Roll Log.png" alt="Alt Text" style="width:50%; height:auto;">
 <img src="screenshots/Search.png" alt="Alt Text" style="width:50%; height:auto;">
-<img src="screenshots/User Apperance Modal.png" alt="Alt Text" style="width:50%; height:auto;">
+<img src="screenshots/User_Apperance_Modal.png" alt="Alt Text" style="width:50%; height:auto;">
 
 
-# Dice Command-bar rolls
+## Dice Command-bar rolls
 
 Typed notation now triggers physics dice plus full modifier math. Live in the Roll Log panel: type something like `2d20kh1+5`, press Enter, dice tumble on screen, total resolves with all modifiers applied. The notation string is logged as the roll's `source`.
 
-## Notation supported
+### Notation supported
 
 | Category | Syntax | Description |
 |---|---|---|
@@ -268,11 +266,8 @@ Roughly in order, dependency and time permitting:
 
 - **Security Audit** - confirm every mutating route rejects unauthenticated and cross-user requests, and lock that down with automated tests so it can't quietly regress.
 - **More Bundles** — candidates I'd like to do next include D&D 3e, D&D 5e 2024, and Star Wars Saga Edition.
-- **Attachment txt/md Editing** - allow inbrowser editting of .md and .txt attachments.
-- **Mobile layout polish** — single-column, collapsible sections on small screens.
-- **Standalone HTML export** — bake a character plus its template into one portable file you can open without the app.  
+- **Mobile layout polish** — single-column, collapsible sections on small screens.  
 - **Character Ownership transfers** - Allow a user to transfer a character then own to another User/Admin. 
-- **Admin login-history log** - Build in a viewable log for the admin to monitor session logins from users and shares.
 - **Add d2/coin-flip** - Dice-Box currently doesnt have a d2 or Coin render so I am attempting on figuring out how to add one. 
 
 ## Why it's built the way it is

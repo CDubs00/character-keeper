@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '../../api';
 import { FileIcon } from './Icons';
 
@@ -98,6 +100,11 @@ export default function FilesModal({ characterId, characterName, onClose }) {
       return;
     }
     download(entry); // office docs → download
+  }
+
+  function handleViewerSaved(updatedEntry, savedText) {
+    setItems(prev => prev.map(it => it.key === updatedEntry.key ? updatedEntry : it));
+    setViewer(prev => prev ? { ...prev, entry: updatedEntry, text: savedText } : null);
   }
 
   function download(entry) {
@@ -256,21 +263,63 @@ export default function FilesModal({ characterId, characterName, onClose }) {
           url={api.attachmentUrl(characterId, viewer.entry.key)}
           onDownload={() => download(viewer.entry)}
           onClose={() => setViewer(null)}
+          onSaved={handleViewerSaved}
+          characterId={characterId}
         />
       )}
     </div>
   );
 }
 
-function Viewer({ viewer, url, onDownload, onClose }) {
+const EDITABLE_EXTS = new Set(['txt', 'md', 'csv']);
+
+function Viewer({ viewer, url, onDownload, onClose, onSaved, characterId }) {
   const { kind, entry, text } = viewer;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState('');
+  const [saving, setSaving]   = useState(false);
+  const [saveErr, setSaveErr] = useState('');
+
+  const canEdit = kind === 'text' && EDITABLE_EXTS.has(entry.ext || extOf(entry.name));
+
+  function startEdit() {
+    setDraft(text || '');
+    setSaveErr('');
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setSaveErr('');
+  }
+
+  async function save() {
+    setSaving(true);
+    setSaveErr('');
+    const res = await api.updateAttachment(characterId, entry.key, draft);
+    setSaving(false);
+    if (res?.error) { setSaveErr(res.error); return; }
+    setEditing(false);
+    onSaved(res.attachment, draft);
+  }
+
   const bar = (
     <div style={{
       display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.7rem 1rem',
       borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)',
     }}>
       <div style={{ flex: 1, fontSize: '0.9rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{entry.name}</div>
-      <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem' }} onClick={onDownload}>Download</button>
+      {saveErr && <div style={{ fontSize: '0.75rem', color: 'var(--red)' }}>{saveErr}</div>}
+      {canEdit && !editing && (
+        <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem' }} onClick={startEdit}>Edit</button>
+      )}
+      {editing && (
+        <>
+          <button className="btn-primary" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem' }} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem' }} onClick={cancelEdit} disabled={saving}>Cancel</button>
+        </>
+      )}
+      {!editing && <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem' }} onClick={onDownload}>Download</button>}
       <button className="btn-ghost" style={{ padding: '0.2rem 0.5rem' }} onClick={onClose}>✕</button>
     </div>
   );
@@ -288,13 +337,53 @@ function Viewer({ viewer, url, onDownload, onClose }) {
         {kind === 'pdf' && (
           <iframe src={url} title={entry.name} style={{ width: '100%', height: '100%', border: '1px solid var(--border)', background: '#fff' }} />
         )}
-        {kind === 'text' && (
+        {kind === 'text' && !editing && entry.ext !== 'md' && (
           <pre style={{
             width: '100%', height: '100%', margin: 0, overflow: 'auto',
             background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
             padding: '1rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem',
             whiteSpace: 'pre-wrap', wordBreak: 'break-word',
           }}>{text}</pre>
+        )}
+        {kind === 'text' && !editing && entry.ext === 'md' && (
+          <div style={{
+            width: '100%', height: '100%', overflow: 'auto',
+            background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+            padding: '1.5rem 2rem', color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.7,
+            '--md-heading': 'var(--text-accent)',
+          }}>
+            <style>{`
+              .ck-md h1,.ck-md h2,.ck-md h3,.ck-md h4 { color: var(--text-accent); margin: 1.2em 0 0.4em; font-weight: 600; }
+              .ck-md h1 { font-size: 1.4em; } .ck-md h2 { font-size: 1.2em; } .ck-md h3 { font-size: 1em; }
+              .ck-md p { margin: 0.6em 0; }
+              .ck-md ul,.ck-md ol { padding-left: 1.4em; margin: 0.5em 0; }
+              .ck-md li { margin: 0.25em 0; }
+              .ck-md code { font-family: var(--font-mono); font-size: 0.82em; background: var(--bg-raised); padding: 0.1em 0.35em; border-radius: 3px; }
+              .ck-md pre { background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.8em 1em; overflow: auto; }
+              .ck-md pre code { background: none; padding: 0; }
+              .ck-md blockquote { border-left: 3px solid var(--accent); margin: 0.6em 0; padding: 0.3em 0.8em; color: var(--text-secondary); }
+              .ck-md a { color: var(--text-accent); }
+              .ck-md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+              .ck-md table { border-collapse: collapse; font-size: 0.85em; }
+              .ck-md th,.ck-md td { border: 1px solid var(--border); padding: 0.4em 0.7em; }
+              .ck-md th { background: var(--bg-raised); color: var(--text-accent); }
+            `}</style>
+            <div className="ck-md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text || ''}</ReactMarkdown></div>
+          </div>
+        )}
+        {kind === 'text' && editing && (
+          <textarea
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            style={{
+              width: '100%', height: '100%', margin: 0, resize: 'none', boxSizing: 'border-box',
+              background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+              padding: '1rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem',
+              lineHeight: 1.6, outline: 'none',
+            }}
+            spellCheck={false}
+            autoFocus
+          />
         )}
       </div>
     </div>

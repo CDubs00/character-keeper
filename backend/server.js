@@ -19,6 +19,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const USERS_FILE      = path.join(DATA_DIR, 'users.json');
 const CAMPAIGNS_FILE  = path.join(DATA_DIR, 'campaigns.json');
 const CHARS_DIR       = path.join(DATA_DIR, 'characters');  // ← new
+const LOGS_FILE       = path.join(DATA_DIR, 'logs.json');
 
 
 
@@ -26,7 +27,7 @@ const CHARS_DIR       = path.join(DATA_DIR, 'characters');  // ← new
 
 // App/config files that must never be treated as character data, even if they
 // somehow land inside the characters tree (e.g. a misconfigured volume).
-const RESERVED_JSON = new Set(['settings.json', 'users.json', 'campaigns.json', 'sheets-registry.json']);
+const RESERVED_JSON = new Set(['settings.json', 'users.json', 'campaigns.json', 'sheets-registry.json', 'logs.json']);
 
 // ---------------------------------------------------------------------------
 // Attachments
@@ -117,6 +118,29 @@ const BUILTIN_SIDECARS = ['attachments'];
 function getUsers() {
   if (!fs.existsSync(USERS_FILE)) return [];
   return JSON.parse(fs.readFileSync(USERS_FILE));
+}
+
+// ---------------------------------------------------------------------------
+// Activity logs — login events and share-link accesses. Capped at 1 000 per
+// type so the file never grows unbounded.
+// ---------------------------------------------------------------------------
+const LOG_CAP = 1000;
+
+// Node dual-stack sockets represent IPv4 addresses as ::ffff:x.x.x.x — strip
+// the prefix so logs show the plain IPv4 form.
+const normalizeIp = (ip) => (ip || '').replace(/^::ffff:/, '');
+
+function getLogs() {
+  if (!fs.existsSync(LOGS_FILE)) return { logins: [], shareAccesses: [] };
+  try { return JSON.parse(fs.readFileSync(LOGS_FILE)); } catch { return { logins: [], shareAccesses: [] }; }
+}
+
+function appendLog(type, entry) {
+  const logs = getLogs();
+  if (!Array.isArray(logs[type])) logs[type] = [];
+  logs[type].unshift(entry);              // newest first
+  if (logs[type].length > LOG_CAP) logs[type].length = LOG_CAP;
+  try { fs.writeFileSync(LOGS_FILE, JSON.stringify(logs)); } catch { /* non-fatal */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -842,6 +866,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     sortBy:   user.sortBy || 'updatedAt',
     diceScale: user.diceScale ?? 3,
   };
+  appendLog('logins', { username: user.username, at: new Date().toISOString(), ip: normalizeIp(req.ip) });
   res.json(req.session.user);
 });
 
@@ -1063,6 +1088,11 @@ function saveSettings(s) {
 // Public — the renderer and app chrome read theme + link policy even on
 // unauthenticated share pages.
 app.get('/api/settings', (req, res) => res.json(getSettings()));
+
+// Admin only — activity logs (login events + share-link accesses).
+app.get('/api/admin/logs', requireAuth, requireAdmin, (req, res) => {
+  res.json(getLogs());
+});
 
 // Admin only — update theme and/or link policy.
 app.put('/api/settings', requireAuth, requireAdmin, (req, res) => {
@@ -1324,6 +1354,46 @@ app.delete('/api/characters/:id/attachments/:key', requireAuth, validId, require
 
   res.json({ ok: true, attachments: next });
 });
+
+// Update (overwrite) a text attachment — owner-or-admin.
+// Only txt/md/csv are editable; binary files must be re-uploaded.
+const ATTACH_EDITABLE_EXTS = new Set(['txt', 'md', 'csv']);
+
+app.put('/api/characters/:id/attachments/:key',
+  requireAuth, validId, requireAttachmentsOn, requireCharOwner,
+  express.text({ type: 'text/*', limit: ATTACH_MAX_BYTES }),
+  (req, res) => {
+    const key = req.params.key;
+    if (!/^[A-Za-z0-9]{1,40}$/.test(key)) return res.status(400).json({ error: 'Bad key' });
+
+    const { username } = req.foundChar;
+    const id   = req.params.id;
+    const list = readManifest(username, id);
+    const idx  = list.findIndex(a => a.key === key);
+    if (idx === -1) return res.status(404).json({ error: 'No such attachment' });
+
+    const entry = list[idx];
+    if (!ATTACH_EDITABLE_EXTS.has(entry.ext)) {
+      return res.status(415).json({ error: 'Only txt, md, and csv files can be edited in place' });
+    }
+
+    const text = typeof req.body === 'string' ? req.body : '';
+    const buf  = Buffer.from(text, 'utf8');
+    if (buf.length > ATTACH_MAX_BYTES) return res.status(413).json({ error: 'Content too large' });
+
+    const total = list.reduce((n, a) => n + (a.size || 0), 0);
+    if (total - (entry.size || 0) + buf.length > ATTACH_MAX_TOTAL_BYTES) {
+      return res.status(413).json({ error: 'Storage limit for this character reached' });
+    }
+
+    const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
+    fs.writeFileSync(attachBlobPath(username, id, key, entry.ext), buf);
+
+    list[idx] = { ...entry, size: buf.length, sha256, editedAt: new Date().toISOString() };
+    writeManifest(username, id, list);
+
+    res.json({ attachment: list[idx], attachments: list });
+  });
 
 // ---------------------------------------------------------------------------
 // Characters
@@ -1821,13 +1891,9 @@ app.get('/api/campaigns', requireAuth, (req, res) => {
   const username = req.session.user.username;
   const isAdmin  = req.session.user.admin;
 
-  // GMs see their own campaigns; admins see all. Membership arrays were removed —
-  // player ↔ campaign association is now per-character (tag-based), so a plain
-  // player has no owned campaigns and gets an empty list here by design.
-  const visible = all.filter(c =>
-    isAdmin ||
-    c.ownedBy === username
-  );
+  // Only the owning GM sees a campaign. Admin role does not grant visibility into
+  // other GMs' campaigns — a plain player gets an empty list here by design.
+  const visible = all.filter(c => c.ownedBy === username);
   res.json(visible);
 });
 
@@ -1985,6 +2051,12 @@ app.get('/api/share/:token', (req, res) => {
   // tokens it scans for live there), so on its own it would hand back a sheet
   // missing sessions etc. readCharFull pulls those in.
   const merged = readCharFull(result);
+  appendLog('shareAccesses', {
+    sharedBy:  result.username,
+    character: result.char.name || result.char.id || 'Unknown',
+    at:        new Date().toISOString(),
+    ip:        normalizeIp(req.ip),
+  });
   res.json({ char: shareSafeChar(merged), permission: result.share.permission });
 });
 
