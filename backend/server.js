@@ -258,6 +258,8 @@ function slugify(name) {
     .slice(0, 40);
 }
 
+const PORTRAIT_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+
 // Ensures user char directory exists
 function ensureUserCharDir(username) {
   const dir = userCharDir(username);
@@ -1116,7 +1118,7 @@ app.post('/api/characters/:id/portrait', requireAuth, validId, requireCharOwner,
   const portraitUrl = `/portraits/${owner}/${req.file.filename}`;
 
   // Clean up old portraits with different extensions
-  const extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+  const extensions = PORTRAIT_EXTENSIONS;
   extensions.forEach(ext => {
     const old = portraitPath(owner, req.params.id, ext);
     if (fs.existsSync(old) && old !== req.file.path) fs.unlinkSync(old);
@@ -1125,9 +1127,9 @@ app.post('/api/characters/:id/portrait', requireAuth, validId, requireCharOwner,
   // Update the character envelope's portrait field. requireCharOwner already
   // resolved and authorized the character, so req.foundChar is guaranteed.
   const found = req.foundChar;
-  const char = JSON.parse(fs.readFileSync(found.filePath));
+  const char = readCharFull(found);
   char.portrait = portraitUrl;
-  fs.writeFileSync(found.filePath, JSON.stringify(char, null, 2));
+  writeCharSplit(found.username, req.params.id, char);
 
   res.json({ portrait: portraitUrl });
 });
@@ -1137,7 +1139,7 @@ app.get('/api/characters/:id/portrait', requireAuth, validId, (req, res) => {
   const found = findCharFile(req.params.id);
   if (!found) return res.status(404).json({ error: 'Character not found' });
 
-  const extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+  const extensions = PORTRAIT_EXTENSIONS;
   for (const ext of extensions) {
     const p = portraitPath(found.username, req.params.id, ext);
     if (fs.existsSync(p)) {
@@ -1154,16 +1156,16 @@ app.delete('/api/characters/:id/portrait', requireAuth, validId, requireCharOwne
   const owner = found.username;
 
   // Delete whichever extension variant exists on disk.
-  const extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+  const extensions = PORTRAIT_EXTENSIONS;
   extensions.forEach(ext => {
     const p = portraitPath(owner, req.params.id, ext);
     if (fs.existsSync(p)) fs.unlinkSync(p);
   });
 
   // Clear the portrait field in the character envelope.
-  const char = JSON.parse(fs.readFileSync(found.filePath));
+  const char = readCharFull(found);
   char.portrait = null;
-  fs.writeFileSync(found.filePath, JSON.stringify(char, null, 2));
+  writeCharSplit(found.username, req.params.id, char);
 
   res.json({ portrait: null });
 });
@@ -1644,13 +1646,8 @@ app.put('/api/characters/:id', requireAuth, validId, (req, res) => {
   res.json(data);
 });
 
-app.delete('/api/characters/:id', requireAuth, validId, (req, res) => {
-  const found = findCharFile(req.params.id);
-  if (!found) return res.status(404).json({ error: 'Not found' });
-
-  if (!req.session.user.admin && found.username !== req.session.user.username) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+app.delete('/api/characters/:id', requireAuth, validId, requireCharOwner, (req, res) => {
+  const found = req.foundChar;
 
   // collectCharacterFiles globs `${id}.*` in the owner's dir, so this single
   // loop sweeps the main file, every sidecar (sessions.json, etc.), and any
@@ -1668,15 +1665,8 @@ app.delete('/api/characters/:id', requireAuth, validId, (req, res) => {
 // can view a member's sheet but doesn't see their private roll history yet.
 // Widen this later with campaignKeySet()/matchesCampaign() if you want a
 // shared-table view.
-app.get('/api/characters/:id/rolls', requireAuth, validId, (req, res) => {
-  const found = findCharFile(req.params.id);
-  if (!found) return res.status(404).json({ error: 'Not found' });
-
-  const username = req.session.user.username;
-  if (!req.session.user.admin && found.username !== username) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-
+app.get('/api/characters/:id/rolls', requireAuth, validId, requireCharOwner, (req, res) => {
+  const found = req.foundChar;
   res.json(readRolls(found.username, req.params.id));
 });
 
@@ -1690,14 +1680,8 @@ app.get('/api/characters/:id/rolls', requireAuth, validId, (req, res) => {
 // and has its own total. RollLog renders these side-by-side; the top-level
 // `total` is still the grand total across all segments, kept for backward
 // compatibility with single-roll consumers.
-app.post('/api/characters/:id/rolls', requireAuth, validId, (req, res) => {
-  const found = findCharFile(req.params.id);
-  if (!found) return res.status(404).json({ error: 'Not found' });
-
-  const username = req.session.user.username;
-  if (!req.session.user.admin && found.username !== username) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+app.post('/api/characters/:id/rolls', requireAuth, validId, requireCharOwner, (req, res) => {
+  const found = req.foundChar;
 
   const { dice, modifier, total, source, segments } = req.body || {};
   if (typeof dice !== 'object' || dice === null || typeof total !== 'number') {
@@ -1957,14 +1941,9 @@ function shareSafeChar(char) {
   return safe;
 }
 
-app.post('/api/characters/:id/shares', requireAuth, validId, (req, res) => {
-  const found = findCharFile(req.params.id);
-  if (!found) return res.status(404).json({ error: 'Not found' });
-
+app.post('/api/characters/:id/shares', requireAuth, validId, requireCharOwner, (req, res) => {
+  const found = req.foundChar;
   const char = JSON.parse(fs.readFileSync(found.filePath));
-  if (!req.session.user.admin && found.username !== req.session.user.username) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
 
   const { permission = 'view', expiresInDays = 3 } = req.body;
   const token     = generateToken(32);
@@ -1978,25 +1957,17 @@ app.post('/api/characters/:id/shares', requireAuth, validId, (req, res) => {
   res.json(share);
 });
 
-app.get('/api/characters/:id/shares', requireAuth, validId, (req, res) => {
-  const found = findCharFile(req.params.id);
-  if (!found) return res.status(404).json({ error: 'Not found' });
+app.get('/api/characters/:id/shares', requireAuth, validId, requireCharOwner, (req, res) => {
+  const found = req.foundChar;
   const char = JSON.parse(fs.readFileSync(found.filePath));
-  if (!req.session.user.admin && found.username !== req.session.user.username) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
   const now    = new Date();
   const active = (char.shares || []).filter(s => new Date(s.expiresAt) > now);
   res.json(active);
 });
 
-app.delete('/api/characters/:id/shares/:token', requireAuth, validId, (req, res) => {
-  const found = findCharFile(req.params.id);
-  if (!found) return res.status(404).json({ error: 'Not found' });
+app.delete('/api/characters/:id/shares/:token', requireAuth, validId, requireCharOwner, (req, res) => {
+  const found = req.foundChar;
   const char = JSON.parse(fs.readFileSync(found.filePath));
-  if (!req.session.user.admin && found.username !== req.session.user.username) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
   char.shares = (char.shares || []).filter(s => s.token !== req.params.token);
   fs.writeFileSync(found.filePath, JSON.stringify(char, null, 2));
   res.json({ ok: true });
@@ -2069,18 +2040,14 @@ app.put('/api/share/:token', (req, res) => {
 // Rename — explicit file rename, separate from autosave
 // ---------------------------------------------------------------------------
 
-app.post('/api/characters/:id/rename', requireAuth, validId, (req, res) => {
+app.post('/api/characters/:id/rename', requireAuth, validId, requireCharOwner, (req, res) => {
   const oldId    = req.params.id;
   const username = req.session.user.username;
   const newName  = req.body?.name?.trim();
 
   if (!newName) return res.status(400).json({ error: 'Name required' });
 
-  const existing = findCharFile(oldId);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-  if (!req.session.user.admin && existing.username !== username) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+  const existing = req.foundChar;
 
   // Build new ID: slugified name + original random suffix
   const parts  = oldId.split('-');
@@ -2117,7 +2084,7 @@ app.post('/api/characters/:id/rename', requireAuth, validId, (req, res) => {
     // re-write the envelope. Sidecars don't reference the id internally so they
     // don't need this second write.
     if (char.portrait) {
-      const extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+      const extensions = PORTRAIT_EXTENSIONS;
       const ext = extensions.find(e => char.portrait.endsWith(e));
       if (ext) {
         char.portrait = `/portraits/${username}/${newId}.portrait${ext}`;
@@ -2130,26 +2097,21 @@ app.post('/api/characters/:id/rename', requireAuth, validId, (req, res) => {
 });
 
 // POST /api/characters/:id/status   body: { status: "active" | "archived" }
-app.post('/api/characters/:id/status', requireAuth, validId, (req, res) => {
-  const id       = req.params.id;
-  const username = req.session.user.username;
-  const status   = req.body?.status;
+app.post('/api/characters/:id/status', requireAuth, validId, requireCharOwner, (req, res) => {
+  const id     = req.params.id;
+  const status = req.body?.status;
 
   const VALID_STATUSES = ['active', 'inactive', 'deceased', 'retired', 'shelved', 'archived'];
   if (!VALID_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
-  const existing = findCharFile(id);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-  if (!req.session.user.admin && existing.username !== username) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+  const existing = req.foundChar;
 
-  const char = JSON.parse(fs.readFileSync(existing.filePath));
+  const char = readCharFull(existing);
   char.status    = status;
   char.updatedAt = new Date().toISOString();
-  fs.writeFileSync(existing.filePath, JSON.stringify(char, null, 2));
+  writeCharSplit(existing.username, req.params.id, char);
 
   res.json({ id, status });
 });
@@ -2188,12 +2150,12 @@ app.post('/api/characters/:id/campaign/join', requireAuth, validId, (req, res) =
   const match = getCampaigns().find(c => c.joinCode === code.toUpperCase() || c.id === code);
   if (!match) return res.status(404).json({ error: 'No campaign matches that code' });
 
-  const char = JSON.parse(fs.readFileSync(existing.filePath));
+  const char = readCharFull(existing);
   char.campaignId   = match.id;
   char.campaignCode = code.toUpperCase();
   char.campaignName = match.name;
   char.updatedAt    = new Date().toISOString();
-  fs.writeFileSync(existing.filePath, JSON.stringify(char, null, 2));
+  writeCharSplit(existing.username, req.params.id, char);
 
   res.json({ id, campaignId: match.id, campaignName: match.name });
 });
@@ -2209,7 +2171,7 @@ app.post('/api/characters/:id/campaign/leave', requireAuth, validId, (req, res) 
   const existing = findCharFile(id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  const char    = JSON.parse(fs.readFileSync(existing.filePath));
+  const char    = readCharFull(existing);
   const isOwner = existing.username === username;
   const isGM    = ownsCampaignOf(username, char.campaignId);
 
@@ -2221,7 +2183,7 @@ app.post('/api/characters/:id/campaign/leave', requireAuth, validId, (req, res) 
   char.campaignCode = null;
   char.campaignName = null;
   char.updatedAt    = new Date().toISOString();
-  fs.writeFileSync(existing.filePath, JSON.stringify(char, null, 2));
+  writeCharSplit(existing.username, req.params.id, char);
 
   res.json({ id, campaignId: null, campaignName: null });
 });

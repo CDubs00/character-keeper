@@ -76,27 +76,31 @@ export default function App() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    fetch('/api/me')
-      .then(r => r.ok ? r.json() : null)
-      .then(async data => {
+    const run = async () => {
+      try {
+        const meRes = await fetch('/api/me');
+        const data = meRes.ok ? await meRes.json() : null;
         if (data) {
           setUser(data);
           applyTheme(data.theme || 'tavern');           // personal theme
         } else {
           // Not logged in. Is this a fresh, user-less install?
           try {
-            const s = await fetch('/api/setup').then(r => r.ok ? r.json() : null);
+            const setupRes = await fetch('/api/setup');
+            const s = setupRes.ok ? await setupRes.json() : null;
             if (s?.needsSetup) setNeedsSetup(true);
           } catch {}
           // Logged out / share page — use the admin default theme.
+          // Fire-and-forget: don't block setChecking on the theme fetch.
           fetch('/api/settings')
             .then(r => r.ok ? r.json() : null)
             .then(s => applyTheme(s?.theme || 'tavern'))
             .catch(() => {});
         }
-        setChecking(false);
-      })
-      .catch(() => setChecking(false));
+      } catch {}
+      setChecking(false);
+    };
+    run();
   }, []);
 
   if (checking) return null;

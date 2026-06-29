@@ -433,7 +433,11 @@
 }
 
 /* ── Tables ──────────────────────────────────────────────── */
-.sheet-root .sheet-table { width: 100%; border-collapse: collapse; }
+.sheet-root .sheet-table { 
+  width: 100%; 
+  border-collapse: collapse; 
+  min-width: 600px;}
+
 .sheet-root .sheet-table th {
   font-family: var(--f-display);
   font-size: 9px; font-weight: 600;
