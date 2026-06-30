@@ -1052,11 +1052,24 @@ function cleanCssRule(rule) {
       return `${at} ${cond} { ${inner.join(' ')} }`;
     }
 
-    default:
-      // @keyframes, @font-face, @page, @namespace — no selectors targeting
-      // app chrome, so pass through as-is. Use cssText (the browser's
-      // serialised form).
+    default: {
+      // Grouping rules with nested cssRules (@container, @layer, etc.) —
+      // recurse so inner selectors get scoped to .sheet-root, then
+      // reconstruct using the original at-rule header from cssText.
+      if (rule.cssRules) {
+        const inner = [];
+        for (let j = 0; j < rule.cssRules.length; j++) {
+          const c = cleanCssRule(rule.cssRules[j]);
+          if (c) inner.push(c);
+        }
+        if (!inner.length) return '';
+        const open = (rule.cssText || '').indexOf('{');
+        const header = open > -1 ? rule.cssText.slice(0, open).trim() : rule.cssText;
+        return `${header} { ${inner.join(' ')} }`;
+      }
+      // @font-face, @page, @namespace — no selectors, pass through as-is.
       return rule.cssText || '';
+    }
   }
 }
 

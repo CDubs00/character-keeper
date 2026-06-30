@@ -1,0 +1,990 @@
+/* ============================================================
+   DUNGEONS & DRAGONS 5e (2024) — theme.css  v2
+   Pure CSS chamfered frames, light parchment palette, borders
+   coloured by the host app's --accent if set, else D&D red.
+
+   Backdrop: drop a backdrop.png into this bundle folder and the
+   sheet picks it up automatically. The image is served from
+   /api/sheets/:sheetId/assets/backdrop.png — no extra wiring.
+   If no backdrop is supplied, defaults to a very soft grey wash.
+
+   Scoped to .dnd24-sheet so app chrome is unaffected.
+   ============================================================ */
+
+/* ── Tokens ───────────────────────────────────────────────── */
+.dnd24-sheet {
+  /* Border colour — picks up the user's app theme accent if
+     the app sets it on :root; falls back to official D&D red. */
+  --frame-stroke: var(--accent, #DF0000);
+
+  /* Other colour pegs */
+  --paper:        #f5f1ea;
+  --paper-soft:   #ffffff;
+  --ink:          #1d1d22;
+  --ink-soft:     #4a4a52;
+  --ink-faint:    #8a8a92;
+  --ink-hint:     #6c6c74;
+  --line:         #d4d0c8;
+  --frame-fill:   #ffffff;
+  --frame-border: 1.5px;
+  --chamfer:      9px;
+
+  --f-display: 'Cinzel', 'Georgia', serif;
+  --f-body:    'EB Garamond', 'Crimson Pro', 'Georgia', serif;
+
+  font-family: var(--f-body);
+  font-size:   14px;
+  line-height: 1.3;
+  color:       var(--ink);
+
+  /* Backdrop — bundle-supplied image, or a soft grey default.
+     The url() always resolves; if backdrop.png is missing the
+     browser falls back silently and the linear-gradient layer
+     remains as the visible background. */
+  background:
+    linear-gradient(rgba(245,241,234,0.92), rgba(245,241,234,0.92)),
+    url('/api/sheets/8d4a2e91-7b6c-4f3d-a1e8-2c5b9d7e4f01/assets/backdrop.png'),
+    var(--paper);
+  background-size: cover, cover, auto;
+  background-position: center top;
+  background-repeat: no-repeat, no-repeat, repeat;
+
+  zoom:      1.08;
+  padding:   10px;
+  max-width: 1080px;
+  margin:    0 auto;
+
+  /* Become an inline-size container so the @container queries below fire
+     based on THIS element's width, not the parent .sheet-root (which is
+     always viewport-wide). Without this, the bundle's @container rules
+     compute against the wrong width and the mobile layout never engages. */
+  container-type: inline-size;
+  container-name: dnd24;
+}
+
+/* Reset globals leaking in from index.css */
+.dnd24-sheet *,
+.dnd24-sheet *::before,
+.dnd24-sheet *::after { box-sizing: border-box; }
+
+.dnd24-sheet h1, .dnd24-sheet h2, .dnd24-sheet h3 {
+  font-family: var(--f-display);
+  color: inherit; margin: 0; padding: 0;
+}
+
+.dnd24-sheet label {
+  font-family: var(--f-display);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-hint);
+  display: block;
+  margin-bottom: 1px;
+}
+
+.dnd24-sheet input,
+.dnd24-sheet select,
+.dnd24-sheet textarea {
+  font-family: var(--f-body);
+  font-size: 13.5px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--ink);
+  padding: 1px 3px;
+  width: 100%;
+  outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dnd24-sheet input:focus,
+.dnd24-sheet select:focus,
+.dnd24-sheet textarea:focus {
+  border-bottom-color: var(--frame-stroke);
+  background: rgba(0,0,0,0.04);
+}
+.dnd24-sheet textarea {
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.6);
+  padding: 5px 7px;
+  resize: vertical;
+  line-height: 1.4;
+}
+.dnd24-sheet input[type="number"] { -moz-appearance: textfield; }
+.dnd24-sheet input[type="number"]::-webkit-outer-spin-button,
+.dnd24-sheet input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.dnd24-sheet select { cursor: pointer; background-image: none; padding-right: 3px; }
+.dnd24-sheet input.cf-trunc { text-overflow: ellipsis; }
+
+.dnd24-sheet button {
+  font-family: var(--f-display);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border: none;
+  border-radius: 2px;
+  padding: 2px 8px;
+  background: none;
+  color: var(--ink-soft);
+  transition: all 0.12s;
+}
+
+/* ════════════════════════════════════════════════════════════
+   THE CHAMFERED FRAME — pure CSS, no SVG.
+   .frame is itself the border colour (--frame-stroke), clipped
+   to an octagon. ::before is the fill colour, inset by
+   --frame-border and clipped to a slightly smaller octagon.
+   The peeking outer edge IS the border, continuous across the
+   chamfered corners.
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .frame {
+  position: relative;
+  padding: 7px 9px;
+  background: var(--frame-stroke);
+  clip-path: polygon(
+    var(--chamfer) 0%,
+    calc(100% - var(--chamfer)) 0%,
+    100% var(--chamfer),
+    100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%,
+    var(--chamfer) 100%,
+    0% calc(100% - var(--chamfer)),
+    0% var(--chamfer)
+  );
+}
+.dnd24-sheet .frame::before {
+  content: '';
+  position: absolute;
+  inset: var(--frame-border);
+  background: var(--frame-fill);
+  clip-path: polygon(
+    calc(var(--chamfer) - var(--frame-border)) 0%,
+    calc(100% - var(--chamfer) + var(--frame-border)) 0%,
+    100% calc(var(--chamfer) - var(--frame-border)),
+    100% calc(100% - var(--chamfer) + var(--frame-border)),
+    calc(100% - var(--chamfer) + var(--frame-border)) 100%,
+    calc(var(--chamfer) - var(--frame-border)) 100%,
+    0% calc(100% - var(--chamfer) + var(--frame-border)),
+    0% calc(var(--chamfer) - var(--frame-border))
+  );
+  z-index: 0;
+}
+.dnd24-sheet .frame > * { position: relative; z-index: 1; }
+
+/* ── Section headers, add buttons, row tools ── */
+.dnd24-sheet .sec-title {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--frame-stroke);
+  margin-bottom: 5px;
+}
+.dnd24-sheet .sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 6px;
+  padding-bottom: 3px;
+}
+.dnd24-sheet .sec-head .sec-title { margin-bottom: 0; }
+
+.dnd24-sheet .add-btn {
+  color: var(--frame-stroke);
+  font-weight: 600;
+  border: 1px solid var(--frame-stroke);
+  border-radius: 2px;
+  padding: 1px 9px;
+  background: rgba(255,255,255,0.5);
+  white-space: nowrap;
+}
+.dnd24-sheet .add-btn:hover {
+  background: var(--frame-stroke);
+  color: #fff;
+}
+
+.dnd24-sheet .rm-btn { color: var(--ink-faint); padding: 0 4px; font-size: 11px; }
+.dnd24-sheet .rm-btn:hover { color: var(--frame-stroke); }
+
+.dnd24-sheet .row-tools { display: inline-flex; align-items: center; gap: 1px; flex-shrink: 0; }
+.dnd24-sheet .cf-info-btn { font-size: 13px; padding: 0 2px; color: var(--ink-faint); opacity: 0.55; }
+.dnd24-sheet .cf-info-btn.has-content { color: var(--frame-stroke); opacity: 1; }
+
+.dnd24-sheet .gap-top { margin-top: 12px; }
+.dnd24-sheet .f { min-width: 0; }
+
+/* ── Tabs ─────────────────────────────────────────────────── */
+.dnd24-sheet .cf-tab-bar {
+  border-bottom: 2px solid var(--frame-stroke);
+  margin-bottom: 12px;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.dnd24-sheet .cf-tab-btn {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: rgba(255,255,255,0.6);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  padding: 6px 16px;
+}
+.dnd24-sheet .cf-tab-btn:hover { color: var(--frame-stroke); }
+.dnd24-sheet .cf-tab-btn.active {
+  color: #fff;
+  background: var(--frame-stroke);
+  border-color: var(--frame-stroke);
+}
+
+/* ════════════════════════════════════════════════════════════
+   TRACKER + TOGGLE PIPS
+   The renderer uses .tracker-bubble.filled and
+   .conviction-bubble.filled — not data attributes. So we style
+   those class names directly. Pips need a clearly-visible
+   filled state on the lighter parchment background.
+   ════════════════════════════════════════════════════════════ */
+/* All pips are diamonds — square rotated 45°, same as armor proficiencies */
+.dnd24-sheet .tracker { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.dnd24-sheet .tracker-bubble {
+  width: 9px; height: 9px;
+  border-radius: 0;
+  transform: rotate(45deg);
+  border: 1.5px solid var(--ink);
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.1s;
+  flex-shrink: 0;
+}
+.dnd24-sheet .tracker-bubble.filled {
+  background: var(--frame-stroke);
+  border-color: var(--frame-stroke);
+}
+/* Death-save failure pips */
+.dnd24-sheet .death-fail .tracker-bubble {
+  border-color: var(--frame-stroke);
+}
+.dnd24-sheet .death-fail .tracker-bubble.filled {
+  background: var(--frame-stroke);
+}
+
+/* Toggle (data-type="toggle") — boolean single pip, also diamond */
+.dnd24-sheet .conviction-bubble {
+  width: 10px; height: 10px;
+  border-radius: 0;
+  transform: rotate(45deg);
+  border: 1.5px solid var(--ink);
+  background: #fff;
+  cursor: pointer;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.dnd24-sheet .conviction-bubble.filled {
+  background: var(--frame-stroke);
+  border-color: var(--frame-stroke);
+}
+
+/* Heroic Inspiration — same diamond, just larger */
+.dnd24-sheet .heroic-toggle.conviction-bubble {
+  width: 22px; height: 22px;
+  border: 2px solid var(--ink);
+  background: #fff;
+  border-radius: 0;
+  transform: rotate(45deg);
+  cursor: pointer;
+  display: inline-block;
+  margin-top: 4px;
+}
+.dnd24-sheet .heroic-toggle.conviction-bubble.filled {
+  background: var(--frame-stroke);
+  border-color: var(--frame-stroke);
+}
+
+/* Save-prof / skill-prof radio — same diamond, fixed size */
+.dnd24-sheet .sk-radio.conviction-bubble,
+.dnd24-sheet .sk-radio.tracker-bubble,
+.dnd24-sheet .sk-radio.tracker {
+  width: 10px;
+  height: 10px;
+}
+.dnd24-sheet .sk-radio.tracker .tracker-bubble {
+  width: 10px;
+  height: 10px;
+}
+
+/* ── Collapsible (sessions) ── */
+.dnd24-sheet .cf-collapsible-header {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--frame-stroke);
+  padding: 2px 0;
+}
+.dnd24-sheet .cf-collapsible[data-open="true"] > .cf-collapsible-header {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 10px;
+  padding-bottom: 5px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   HEADER BAND
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .dnd24-header {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dnd24-sheet .nameplate { padding: 7px 9px; }
+.dnd24-sheet .nameplate .name-field {
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+.dnd24-sheet .nameplate .name-field [data-bind="info.name"] {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--ink);
+}
+.dnd24-sheet .identity-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px 10px;
+}
+
+.dnd24-sheet .vitals { padding: 6px 9px; }
+.dnd24-sheet .vitals-row {
+  display: grid;
+  grid-template-columns: 62px 1fr 70px 80px;
+  gap: 6px;
+  height: 100%;
+  align-items: stretch;
+}
+.dnd24-sheet .vital-block {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; gap: 2px;
+}
+.dnd24-sheet .vital-block label { text-align: center; }
+.dnd24-sheet .vital-big {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 20px;
+  text-align: center;
+  border-bottom: 1px solid var(--frame-stroke);
+  padding: 0;
+  width: 100%;
+}
+.dnd24-sheet .vital-sub { font-size: 8px; margin-top: 1px; }
+
+.dnd24-sheet .hp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 6px;
+  width: 100%;
+}
+.dnd24-sheet .hp-grid .hp-current {
+  grid-column: 1 / -1;
+  font-size: 20px;
+}
+.dnd24-sheet .hp-sub {
+  display: flex; flex-direction: column;
+  font-size: 10px; text-align: center;
+}
+.dnd24-sheet .hp-sub label { font-size: 7px; margin-bottom: 0; }
+.dnd24-sheet .hp-sub input { font-size: 12px; text-align: center; padding: 0; }
+
+.dnd24-sheet .death-row {
+  display: flex; gap: 4px;
+  align-items: center; justify-content: center;
+  margin-top: 1px;
+}
+.dnd24-sheet .death-label {
+  font-family: var(--f-display);
+  font-size: 8px; color: var(--ink-soft);
+  letter-spacing: 0.08em;
+}
+
+/* ════════════════════════════════════════════════════════════
+   MAIN GRID
+   Desktop: 2-column. abilities-2col + col-abilities stack in
+   column 1; col-content spans column 2 for both rows.
+   Mobile:  flex column — DOM order is already correct.
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .dnd24-main {
+  display: grid;
+  grid-template-columns: minmax(320px, 360px) 1fr;
+  grid-template-rows: auto auto;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: start;
+}
+
+/* abilities-2col: top of left column */
+.dnd24-sheet .dnd24-main > .abilities-2col {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+/* col-content: right column, spans both rows */
+.dnd24-sheet .col-content {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* col-abilities (coins + equip): bottom of left column */
+.dnd24-sheet .col-abilities {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Two independent flex columns of equal height (set by the taller side).
+   Items stack with minimal gap — no extra space distributed. */
+.dnd24-sheet .abilities-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  align-items: stretch;
+}
+.dnd24-sheet .abilities-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* Prof Bonus + Heroic Inspiration — compact, only as tall as needed */
+.dnd24-sheet .mini-cell {
+  padding: 6px 8px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.dnd24-sheet .mini-cell label { text-align: center; }
+.dnd24-sheet .mini-val {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 22px;
+  text-align: center;
+  border-bottom: 1px solid var(--frame-stroke);
+  padding: 0 8px;
+  max-width: 64px;
+  margin: 0 auto;
+}
+
+/* Individual ability block — grows to fill column height so both
+   columns reach the same total. Mini-cells don't grow (no flex-grow). */
+.dnd24-sheet .ability-block {
+  padding: 5px 6px;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+.dnd24-sheet .ab-header {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-align: center;
+  margin-bottom: 4px;
+  border-bottom: 0.5px solid rgba(0,0,0,0.12);
+  padding-bottom: 2px;
+}
+.dnd24-sheet .ab-mod-row {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 5px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.dnd24-sheet .ab-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid var(--ink-soft);
+  background: #fff;
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 14px;
+  text-align: center;
+  padding: 0;
+  border-bottom: 2px solid var(--ink-soft);
+}
+.dnd24-sheet .ab-circle:focus {
+  background: rgba(0,0,0,0.04);
+  border-color: var(--frame-stroke);
+}
+.dnd24-sheet .ab-right {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.dnd24-sheet .ab-mod-lbl,
+.dnd24-sheet .ab-score-lbl {
+  font-family: var(--f-display);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-hint);
+  margin: 0;
+}
+.dnd24-sheet .ab-score-box {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 13px;
+  text-align: center;
+  border: 1px solid var(--frame-stroke);
+  background: #fff;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--frame-stroke);
+  max-width: 50px;
+}
+
+/* Skill rows under each ability — tight, name flexes */
+.dnd24-sheet .ability-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.dnd24-sheet .skill-row {
+  display: grid;
+  grid-template-columns: 12px 24px 1fr auto;
+  gap: 4px;
+  align-items: center;
+  padding: 1px 0;
+}
+.dnd24-sheet .skill-row.save {
+  border-bottom: 0.5px solid rgba(0,0,0,0.12);
+  padding-bottom: 2px;
+  margin-bottom: 2px;
+}
+.dnd24-sheet .skill-row.save .sk-name { font-weight: 700; }
+.dnd24-sheet .sk-bonus {
+  font-size: 12px;
+  text-align: center;
+  padding: 0;
+  border-bottom: 0.5px dashed var(--line);
+}
+.dnd24-sheet .sk-name {
+  font-size: 12.5px;
+  color: var(--ink);
+  white-space: nowrap;
+  /* No truncation — skill names always show in full. */
+}
+.dnd24-sheet .sk-name-input {
+  font-size: 12.5px;
+  padding: 0;
+  border-bottom: 0.5px dashed var(--line);
+}
+.dnd24-sheet .skill-row .row-tools { font-size: 10px; }
+.dnd24-sheet .skill-row .row-tools .rm-btn { font-size: 9px; padding: 0 2px; }
+.dnd24-sheet .skill-row .row-tools .cf-info-btn { font-size: 11px; padding: 0 1px; }
+
+/* ════════════════════════════════════════════════════════════
+   COINS (left col, between abilities and Equipment Training)
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .coins-card { padding: 6px 9px; }
+.dnd24-sheet .money-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.dnd24-sheet .coin {
+  display: flex; flex-direction: column;
+  align-items: center; text-align: center;
+}
+.dnd24-sheet .coin label { font-size: 9px; margin-bottom: 1px; }
+.dnd24-sheet .coin input {
+  text-align: center; font-size: 12px;
+  padding: 0;
+}
+
+/* ════════════════════════════════════════════════════════════
+   EQUIPMENT TRAINING — same width as left column
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .equip-train { padding: 6px 9px; }
+.dnd24-sheet .equip-train .armor-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.dnd24-sheet .train-lbl {
+  font-family: var(--f-display);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-hint);
+  flex-shrink: 0;
+}
+.dnd24-sheet .arm-diamond {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+/* arm-diamond pips are already diamonds via the base conviction-bubble style */
+.dnd24-sheet .equip-train .f { margin-top: 3px; }
+
+/* ════════════════════════════════════════════════════════════
+   RIGHT COLUMN — Init strip → Weapons → Features
+   ════════════════════════════════════════════════════════════ */
+
+/* Init/Speed/Size/PP — narrowed strip, sits above Weapons */
+.dnd24-sheet .stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+.dnd24-sheet .strip-cell {
+  padding: 4px 6px;
+  text-align: center;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.dnd24-sheet .strip-cell label {
+  text-align: center;
+  font-size: 7.5px;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+}
+.dnd24-sheet .strip-val {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 14px;
+  text-align: center;
+  padding: 0;
+  border-bottom: 1px solid var(--frame-stroke);
+  max-width: 80px;
+}
+
+.dnd24-sheet .weapons-card,
+.dnd24-sheet .features-card { padding: 7px 9px; }
+
+/* ════════════════════════════════════════════════════════════
+   TABLES (Weapons, Features, Spells, Equipment)
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.dnd24-sheet .sheet-table th {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-hint);
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  padding: 2px 3px;
+  font-style: normal;
+}
+.dnd24-sheet .sheet-table td {
+  padding: 2px 3px;
+  border-bottom: 0.5px dashed rgba(0,0,0,0.08);
+  vertical-align: middle;
+}
+.dnd24-sheet .sheet-table input {
+  padding: 0;
+  border-bottom: none;
+}
+.dnd24-sheet .sheet-table input:focus {
+  background: rgba(0,0,0,0.04);
+}
+.dnd24-sheet .sheet-table .tools-col { width: 36px; text-align: right; }
+.dnd24-sheet .sheet-table .qty-col   { width: 50px; }
+.dnd24-sheet .sheet-table .wt-col    { width: 60px; }
+
+.dnd24-sheet .weapons-tbl .atk-col     { width: 68px; }
+.dnd24-sheet .features-tbl .source-col { width: 28%; }
+
+/* ════════════════════════════════════════════════════════════
+   SPELLS TAB
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .spells-top {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* Spellcasting stats — 2x2 */
+.dnd24-sheet .spell-stats-grid {
+  padding: 7px 9px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 10px;
+  align-content: center;
+}
+
+.dnd24-sheet .spell-slots { padding: 7px 9px; }
+.dnd24-sheet .slot-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 10px;
+  gap: 1px;
+}
+.dnd24-sheet .slot-cell label { font-size: 7px; margin-bottom: 0; }
+.dnd24-sheet .slot-cell input {
+  width: 26px; text-align: center;
+  font-size: 12px; padding: 0;
+}
+.dnd24-sheet .slot-cell span { font-size: 9px; color: var(--ink-hint); }
+.dnd24-sheet .slots-grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 3px;
+}
+
+.dnd24-sheet .spells-card { padding: 7px 9px; }
+
+/* Spells table: very narrow Cast Time column with wrapped header */
+.dnd24-sheet .spells-tbl .prep-col,
+.dnd24-sheet .spells-tbl .prep-cell { width: 36px; text-align: center; }
+.dnd24-sheet .spells-tbl .lvl-col,
+.dnd24-sheet .spells-tbl .lvl-input { width: 32px; text-align: center; }
+.dnd24-sheet .spells-tbl .cast-col  { width: 52px; }
+.dnd24-sheet .spells-tbl .range-col { width: 60px; }
+.dnd24-sheet .spells-tbl .flag-col  { width: 26px; text-align: center; }
+.dnd24-sheet .spells-tbl .flag-col .tracker { justify-content: center; }
+.dnd24-sheet .spells-tbl .flag-col .tracker-bubble { margin: 0 auto; }
+
+/* Allow the th in cast-col to wrap (it has a <br/> already) */
+.dnd24-sheet .spells-tbl .cast-col .wrap-h {
+  display: inline-block;
+  line-height: 1.05;
+}
+
+.dnd24-sheet .dnd24-hint {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ink-hint);
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 0.5px solid var(--line);
+}
+
+/* ════════════════════════════════════════════════════════════
+   PORTRAIT
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .portrait-area {
+  width: 100%;
+  height: 220px;
+  border: 1.5px dashed var(--frame-stroke);
+  background: rgba(255,255,255,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.dnd24-sheet .portrait-area img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.dnd24-sheet .portrait-placeholder {
+  font-family: var(--f-display);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 12px;
+  text-align: center;
+}
+.dnd24-sheet .portrait-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  border: none;
+  border-radius: 2px;
+  font-size: 10px;
+  padding: 2px 5px;
+  cursor: pointer;
+  line-height: 1;
+}
+.dnd24-sheet .bg-portrait { position: relative; }
+
+/* ════════════════════════════════════════════════════════════
+   BACKGROUND TAB
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .bg-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dnd24-sheet .bg-portrait { padding: 7px 9px; }
+.dnd24-sheet .bg-text { padding: 7px 9px; }
+.dnd24-sheet .dnd24-appearance {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  margin-top: 6px;
+}
+.dnd24-sheet .dnd24-traits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   SESSIONS TAB
+   ════════════════════════════════════════════════════════════ */
+.dnd24-sheet .sessions-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+.dnd24-sheet .session-card { padding: 7px 9px; margin-bottom: 8px; }
+.dnd24-sheet .session-grid {
+  display: grid;
+  grid-template-columns: 180px 1fr 1fr;
+  gap: 4px 10px;
+}
+.dnd24-sheet .session-grid .date-f { grid-column: 1; }
+.dnd24-sheet .session-grid .span-all { grid-column: 1 / -1; }
+.dnd24-sheet .session-footer {
+  display: flex; justify-content: flex-end;
+  margin-top: 6px;
+}
+.dnd24-sheet .session-rm { font-family: var(--f-display); font-size: 10px; }
+
+/* Consistent vertical spacing between sibling frames inside any tab panel.
+   Equipment tab stacks two frames (Equipment + Magic Item Attunement);
+   Background stacks the bg-grid + Allies frame; etc. Without this they
+   touch awkwardly. */
+.dnd24-sheet .cf-tab-panel > .frame + .frame {
+  margin-top: 10px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   TABLET (≤900px) — tighten the left column
+   ════════════════════════════════════════════════════════════ */
+@container dnd24 (max-width: 900px) {
+  .dnd24-sheet .dnd24-main {
+    grid-template-columns: minmax(280px, 320px) 1fr;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════
+   MOBILE (≤680px)
+   Flow: Character Info → AC/HP → Abilities/Skills
+         → Init/Speed/Size/PP → Weapons → Features
+         → Coins → Equipment Training
+   DOM order of .dnd24-main children already matches this:
+     1. .abilities-2col  2. .col-content  3. .col-abilities
+   So flex-column + no reordering is all that's needed.
+   ════════════════════════════════════════════════════════════ */
+@container dnd24 (max-width: 680px) {
+  .dnd24-sheet { padding: 6px; font-size: 13px; }
+
+  /* Header: stack Info above AC/HP */
+  .dnd24-sheet .dnd24-header { grid-template-columns: 1fr; gap: 6px; }
+  .dnd24-sheet .identity-grid { grid-template-columns: 1fr 1fr; }
+  .dnd24-sheet .vitals-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 5px;
+  }
+
+  /* Main: simple flex column, full-width children */
+  .dnd24-sheet .dnd24-main {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .dnd24-sheet .col-content,
+  .dnd24-sheet .col-abilities { width: 100%; }
+
+  /* Abilities: stay 2-up, tighter */
+  .dnd24-sheet .abilities-2col { grid-template-columns: 1fr 1fr; gap: 4px; }
+  .dnd24-sheet .abilities-col  { gap: 4px; }
+  .dnd24-sheet .ability-block  { padding: 4px 5px; }
+  .dnd24-sheet .ab-header      { font-size: 9px; letter-spacing: 0.1em; }
+  .dnd24-sheet .ab-mod-row     { grid-template-columns: 30px 1fr; gap: 3px; }
+  .dnd24-sheet .ab-circle      { width: 30px; height: 30px; font-size: 12px; }
+  .dnd24-sheet .ab-score-box   { font-size: 11px; }
+  .dnd24-sheet .ab-mod-lbl,
+  .dnd24-sheet .ab-score-lbl   { font-size: 6px; }
+  .dnd24-sheet .skill-row      { grid-template-columns: 10px 20px 1fr auto; gap: 2px; }
+  .dnd24-sheet .sk-bonus,
+  .dnd24-sheet .sk-name,
+  .dnd24-sheet .sk-name-input  { font-size: 11px; }
+  .dnd24-sheet .tracker-bubble,
+  .dnd24-sheet .conviction-bubble { width: 8px; height: 8px; }
+  .dnd24-sheet .mini-cell      { padding: 5px 6px; }
+
+  /* Stats strip: 2×2 */
+  .dnd24-sheet .stats-strip { grid-template-columns: 1fr 1fr; }
+
+  /* Weapons: horizontal scroll */
+  .dnd24-sheet .weapons-card { overflow-x: auto; }
+  .dnd24-sheet .weapons-tbl  { min-width: 460px; }
+
+  /* Spells tab */
+  .dnd24-sheet .spells-top  { grid-template-columns: 1fr; }
+  .dnd24-sheet .slots-grid  { grid-template-columns: repeat(5, 1fr); }
+  .dnd24-sheet .spells-card { overflow-x: auto; }
+  .dnd24-sheet .spells-tbl  { min-width: 620px; }
+
+  /* Background / Sessions */
+  .dnd24-sheet .bg-grid          { grid-template-columns: 1fr; }
+  .dnd24-sheet .dnd24-appearance { grid-template-columns: 1fr 1fr; }
+  .dnd24-sheet .dnd24-traits     { grid-template-columns: 1fr; }
+  .dnd24-sheet .session-grid     { grid-template-columns: 1fr; }
+}
+
+/* Abilities single-column only on very narrow screens (≤320px) */
+@container dnd24 (max-width: 320px) {
+  .dnd24-sheet .abilities-2col { grid-template-columns: 1fr; }
+}
+
+@container dnd24 (max-width: 360px) {
+  .dnd24-sheet .identity-grid { grid-template-columns: 1fr; }
+}

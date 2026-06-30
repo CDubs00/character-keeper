@@ -1022,6 +1022,13 @@ function AdminSettingsTab({ settings, setSettings, setError }) {
     if (res?.error) { setSettings(s => ({ ...s, allowAttachments: !next })); setError(res.error); }
   };
 
+  const toggleUserListForTransfer = async () => {
+    const next = !settings.allowUserListForTransfer;
+    setSettings(s => ({ ...s, allowUserListForTransfer: next }));
+    const res = await api.updateSettings({ allowUserListForTransfer: next });
+    if (res?.error) { setSettings(s => ({ ...s, allowUserListForTransfer: !next })); setError(res.error); }
+  };
+
   const pickTheme = async (key) => {
     setSettings(s => ({ ...s, theme: key }));           // default for share pages / new users
     const res = await api.updateSettings({ theme: key });
@@ -1083,6 +1090,31 @@ function AdminSettingsTab({ settings, setSettings, setError }) {
             left: settings.allowAttachments ? 'calc(100% - 1.15rem)' : '0.15rem',
             width: '1rem', height: '1rem', borderRadius: '50%',
             background: settings.allowAttachments ? 'var(--accent)' : 'var(--text-dim)',
+            transition: 'all 0.15s',
+          }} />
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginTop: '0.9rem' }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Show all users for transfer</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.1rem' }}>
+            When off, "Assign Ownership" only shows admins. When on, all users appear in the list.
+          </div>
+        </div>
+        <button type="button" onClick={toggleUserListForTransfer} role="switch" aria-checked={settings.allowUserListForTransfer}
+          title={settings.allowUserListForTransfer ? 'All users shown for transfer' : 'Only admins shown for transfer'}
+          style={{
+            flexShrink: 0, width: '2.6rem', height: '1.4rem', borderRadius: '1rem', cursor: 'pointer',
+            border: '1px solid ' + (settings.allowUserListForTransfer ? 'var(--accent)' : 'var(--border)'),
+            background: settings.allowUserListForTransfer ? 'var(--accent-glow)' : 'var(--bg-input)',
+            position: 'relative', transition: 'all 0.15s',
+          }}>
+          <span style={{
+            position: 'absolute', top: '50%', transform: 'translateY(-50%)',
+            left: settings.allowUserListForTransfer ? 'calc(100% - 1.15rem)' : '0.15rem',
+            width: '1rem', height: '1rem', borderRadius: '50%',
+            background: settings.allowUserListForTransfer ? 'var(--accent)' : 'var(--text-dim)',
             transition: 'all 0.15s',
           }} />
         </button>
@@ -1607,7 +1639,7 @@ function AdminLogsTab() {
 function AdminModal({ currentUser, onClose }) {
   const [tab,      setTab]      = useState('settings');
   const [error,    setError]    = useState('');
-  const [settings, setSettings] = useState({ theme: 'tavern', allowExternalLinks: false, allowAttachments: false });
+  const [settings, setSettings] = useState({ theme: 'tavern', allowExternalLinks: false, allowAttachments: false, allowUserListForTransfer: false });
 
   // Settings load lives in the shell because both the Settings tab and any
   // future tab might want to read app-level config. Tab components receive
@@ -1847,6 +1879,75 @@ function AddCampaignModal({ character, onJoin, onCancel }) {
 
 // ─── Status Modal ─────────────────────────────────────────────────────────────
 // Single entry point for taking a character off-roster (or re-classifying one
+function TransferOwnershipModal({ character, onTransfer, onCancel }) {
+  const [users,      setUsers]      = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [selected,   setSelected]   = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error,      setError]      = useState('');
+
+  useEffect(() => {
+    api.getAssignableUsers().then(u => {
+      setUsers(Array.isArray(u) ? u : []);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleConfirm = async () => {
+    if (!selected) return;
+    setSubmitting(true);
+    setError('');
+    const res = await api.transferCharacter(character.id, selected);
+    setSubmitting(false);
+    if (res?.error) { setError(res.error); return; }
+    onTransfer(character.id);
+  };
+
+  return (
+    <Modal
+      title="Assign Ownership"
+      subtitle={character.name || 'Character'}
+      onClose={onCancel}
+      hideCancel
+      footer={
+        <>
+          <button className="btn-ghost" onClick={onCancel} disabled={submitting}>Cancel</button>
+          <button className="btn-primary" onClick={handleConfirm} disabled={!selected || submitting || loading}>
+            {submitting ? 'Transferring…' : 'Transfer'}
+          </button>
+        </>
+      }
+    >
+      <div style={{ paddingBottom: '0.5rem' }}>
+        <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          Transfer <strong>{character.name || 'this character'}</strong> to another user. You will lose ownership after the transfer.
+        </p>
+        {error && (
+          <div style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>{error}</div>
+        )}
+        {loading ? (
+          <div style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>Loading users…</div>
+        ) : users.length === 0 ? (
+          <div style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>No eligible users available. An admin can enable "Show all users for transfer" in Settings.</div>
+        ) : (
+          <select
+            value={selected}
+            onChange={e => setSelected(e.target.value)}
+            style={{ ...inputStyle, width: '100%' }}
+          >
+            <option value="">Select a user…</option>
+            {users.map(u => (
+              <option key={u.username} value={u.username}>
+                {u.username}{u.admin ? ' (admin)' : ''}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 // that already is). Mirrors the planned Export modal pattern: one menu item
 // in the dropdown, one modal here that picks the flavor.
 //
@@ -1973,8 +2074,9 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
   );
   const [showArchivedCampaigns, setShowArchivedCampaigns] = useState(false);
   const [joiningChar,   setJoiningChar]   = useState(null); // character being added to a campaign
-  const [sharingChar,   setSharingChar]   = useState(null); // character whose share links are being managed
-  const [archivingChar, setArchivingChar] = useState(null);
+  const [sharingChar,     setSharingChar]     = useState(null); // character whose share links are being managed
+  const [archivingChar,   setArchivingChar]   = useState(null);
+  const [transferringChar, setTransferringChar] = useState(null); // character being transferred to another user
   const [imgExport,     setImgExport]     = useState(null);
 
   // ── Search ──────────────────────────────────────────────────────────────
@@ -1984,6 +2086,10 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchSort,    setSearchSort]    = useState('relevance');       // 'relevance' | 'date'
   const searchInputRef = useRef(null);
+  // Blocks visibilitychange-triggered loadRoster while a mutation (leaveCampaign,
+  // transfer) is in flight so a stale roster fetch can't overwrite the mutation's
+  // optimistic state update and force the user to click twice.
+  const mutatingRef = useRef(false);
 
   const [loadError,     setLoadError]     = useState(null);
 
@@ -2036,7 +2142,7 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
 
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === 'visible') loadRoster();
+      if (document.visibilityState === 'visible' && !mutatingRef.current) loadRoster();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
@@ -2145,6 +2251,11 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
     setChars(prev => prev.filter(c => c.id !== id));
   };
 
+  const handleTransferDone = (id) => {
+    setChars(prev => prev.filter(c => c.id !== id));
+    setTransferringChar(null);
+  };
+
   const isGM = user?.gm || user?.admin;
   const sortBy = user?.sortBy || 'updatedAt';
   
@@ -2177,16 +2288,23 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
 
   const handleLeaveCampaign = async (c) => {
     if (!window.confirm(`Remove "${c.name || 'this character'}" from ${c.campaignName || 'its campaign'}?`)) return;
-    const res = await api.leaveCampaign(c.id);
-    if (res && 'campaignId' in res) {
-      // If we'll still see this character afterward (we own it, or we're an admin
-      // who sees everything), keep it and let it re-group. Otherwise we only had
-      // visibility because it was in our campaign — drop it from the list, matching
-      // what a refresh would show.
-      const stillVisible = c.owner === user?.username;
-      setChars(prev => stillVisible
-        ? prev.map(x => (x.id === c.id ? { ...x, campaignId: null, campaignName: null } : x))
-        : prev.filter(x => x.id !== c.id));
+    mutatingRef.current = true;
+    try {
+      const res = await api.leaveCampaign(c.id);
+      if (res && 'campaignId' in res) {
+        // Read owner from the live prev state, not the stale `c` closure — the
+        // character's owner may have changed (e.g. a transfer) between when this
+        // CharCard was last rendered and when the API response arrived.
+        setChars(prev => {
+          const cur = prev.find(x => x.id === c.id);
+          if (!cur) return prev;
+          return cur.owner === user?.username
+            ? prev.map(x => x.id === c.id ? { ...x, campaignId: null, campaignName: null } : x)
+            : prev.filter(x => x.id !== c.id);
+        });
+      }
+    } finally {
+      mutatingRef.current = false;
     }
   };
 
@@ -2224,6 +2342,7 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
       // items.push({ label: 'Export Sessions (.md)', onClick: () => handleExportSessions(c) });
       // items.push({ label: 'Export JSON', onClick: () => handleExport(c) });
       items.push({ label: 'Export', onClick: () => handleExport(c) });
+      items.push({ label: 'Assign Ownership', onClick: () => setTransferringChar(c) });
       items.push({ label: 'Delete', danger: true, onClick: (e) => handleDelete(e, c.id) });
     } else if (canRemoveCampaign && c.campaignId) {
       items.push({ label: 'Remove from Campaign', onClick: () => handleLeaveCampaign(c) });
@@ -2235,6 +2354,9 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
           <div className="char-name">{c.name || 'Unnamed Character'}</div>
           <div className="char-meta">
             <span>{c.sheetName || ''}</span>
+            {c.campaignName && c.owner === user?.username && (
+              <span style={{ color: 'var(--accent)', marginLeft: '0.4rem' }}>· {c.campaignName}</span>
+            )}
             {c.owner && c.owner !== user?.username && (
               <span style={{ color: 'var(--accent)', marginLeft: '0.4rem' }}>· {c.owner}</span>
             )}
@@ -2594,6 +2716,13 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
           characterId={sharingChar.id}
           onClose={() => setSharingChar(null)}
           onChanged={(hasActive) => setChars(prev => prev.map(x => (x.id === sharingChar.id ? { ...x, hasActiveShare: hasActive } : x)))}
+        />
+      )}
+      {transferringChar && (
+        <TransferOwnershipModal
+          character={transferringChar}
+          onTransfer={handleTransferDone}
+          onCancel={() => setTransferringChar(null)}
         />
       )}
       {exporting && (

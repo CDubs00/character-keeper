@@ -41,6 +41,15 @@ treat it as a starting point, not a guarantee.
 - Minimum password policy: 10+ characters, enforced at setup, admin-create,
   and password reset (shared via a single `passwordError()` function so the
   floor can't drift between paths).
+- Session invalidation on password or role change: a `tokenVersion` counter
+  is stored in each user record and embedded in the session at login. Every
+  authenticated request verifies the session version against the on-disk
+  record; a mismatch immediately destroys the session, so a password reset or
+  role revocation takes effect within the same request cycle rather than at
+  cookie expiry.
+- Login timing is constant regardless of whether the username exists: a
+  pre-computed dummy bcrypt hash is compared when no matching user is found,
+  so response time cannot be used to enumerate registered usernames.
 
 **Access control**
 
@@ -112,6 +121,11 @@ uploads are the highest-risk surface:
   not `Math.random()`.
 - `trust proxy` is on so secure cookies and real client IPs work behind a
   terminating TLS proxy.
+- Global Express error handler prevents unhandled route exceptions from
+  leaking stack traces or internal paths to the client — production responses
+  return a generic `"Internal server error"` message only.
+- JSON request body capped at 1 MB (`express.json({ limit: '1mb' })`),
+  an explicit ceiling above any legitimate character payload.
 
 ## Supported versions
 

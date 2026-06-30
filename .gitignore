@@ -147,7 +147,8 @@ vite.config.ts.timestamp-*
 # Keep data/sheets — those bundles are app source.
 /data/*
 frontend/build/
+/audits/*
 
 # macOS
 .DS_Store
-.DS_Store
+

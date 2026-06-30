@@ -164,10 +164,11 @@ function seedInitialAdmin() {
     if (users.find(u => u.username === username)) return;  // already created
     users.push({
       username,
-      password: bcrypt.hashSync(password, 10),
-      admin:  true,
-      gm:     false,
-      player: false,
+      password:     bcrypt.hashSync(password, 10),
+      admin:        true,
+      gm:           false,
+      player:       false,
+      tokenVersion: 1,
     });
     saveUsers(users);
     console.log(`[auth] Created initial admin "${username}" from INITIAL_ADMIN_* env vars`);
@@ -192,6 +193,11 @@ function saveCampaigns(campaigns) {
 
 function requireAuth(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ error: 'Not authenticated' });
+  const u = getUsers().find(u => u.username === req.session.user.username);
+  if (!u || (u.tokenVersion || 1) !== (req.session.user.tokenVersion || 1)) {
+    req.session.destroy(() => {});
+    return res.status(401).json({ error: 'Session invalidated — please log in again' });
+  }
   next();
 }
 
@@ -696,7 +702,7 @@ if (!sessionSecret) {
   console.warn('[auth] No SESSION_SECRET set — using a random dev secret (sessions reset on restart).');
 }
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(session({
   secret: sessionSecret,
   resave: false,
@@ -840,6 +846,10 @@ sheets.registerRoutes(app, DATA_DIR, requireAuth);
 // Auth
 // ---------------------------------------------------------------------------
 
+// Pre-computed at startup so unknown-username login attempts take the same
+// ~100ms as a real bcrypt compare, preventing timing-based username enumeration.
+const DUMMY_HASH = bcrypt.hashSync('__dummy_sentinel__', 10);
+
 // Brute-force protection: cap login attempts per IP. Counts all attempts
 // (not just failures) so a flood of guesses can't slip through.
 const loginLimiter = rateLimit({
@@ -854,17 +864,18 @@ app.post('/api/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   const users = getUsers();
   const user  = users.find(u => u.username === username);
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-  const match = await bcrypt.compare(password, user.password);
-  if (!match)  return res.status(401).json({ error: 'Invalid credentials' });
+  const hash  = user ? user.password : DUMMY_HASH;
+  const match = await bcrypt.compare(String(password || ''), hash);
+  if (!user || !match) return res.status(401).json({ error: 'Invalid credentials' });
   req.session.user = {
-    username: user.username,
-    admin:    user.admin    || false,
-    gm:       user.gm       || false,
-    player:   user.player   || false,
-    theme:    user.theme  || getSettings().theme || 'tavern',
-    sortBy:   user.sortBy || 'updatedAt',
-    diceScale: user.diceScale ?? 3,
+    username:     user.username,
+    admin:        user.admin    || false,
+    gm:           user.gm       || false,
+    player:       user.player   || false,
+    theme:        user.theme  || getSettings().theme || 'tavern',
+    sortBy:       user.sortBy || 'updatedAt',
+    diceScale:    user.diceScale ?? 3,
+    tokenVersion: user.tokenVersion || 1,
   };
   appendLog('logins', { username: user.username, at: new Date().toISOString(), ip: normalizeIp(req.ip) });
   res.json(req.session.user);
@@ -1011,16 +1022,17 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
   if (usernameError) return res.status(400).json({ error: usernameError });
 
   const users = getUsers();
-  if (users.find(u => u.username === username)) {
+  if (users.find(u => u.username.toLowerCase() === username.toLowerCase())) {
     return res.status(409).json({ error: 'A user with that name already exists' });
   }
 
   const user = {
     username,
-    password: await bcrypt.hash(password, 10),
-    admin:  !!req.body.admin,
-    gm:     !!req.body.gm,
-    player: !!req.body.player,
+    password:     await bcrypt.hash(password, 10),
+    admin:        !!req.body.admin,
+    gm:           !!req.body.gm,
+    player:       !!req.body.player,
+    tokenVersion: 1,
   };
   users.push(user);
   saveUsers(users);
@@ -1040,14 +1052,17 @@ app.patch('/api/users/:username', requireAuth, requireAdmin, async (req, res) =>
     return res.status(400).json({ error: "You can't remove your own admin role" });
   }
 
+  let changed = false;
   for (const role of ['admin', 'gm', 'player']) {
-    if (role in req.body) user[role] = !!req.body[role];
+    if (role in req.body) { user[role] = !!req.body[role]; changed = true; }
   }
   if (req.body.password) {
     const pwErr = passwordError(String(req.body.password));
     if (pwErr) return res.status(400).json({ error: pwErr });
     user.password = await bcrypt.hash(String(req.body.password), 10);
+    changed = true;
   }
+  if (changed) user.tokenVersion = (user.tokenVersion || 1) + 1;
 
   saveUsers(users);
   res.json(publicUser(user));
@@ -1066,12 +1081,66 @@ app.delete('/api/users/:username', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/users/assignable — list of users available for a character transfer.
+// If allowUserListForTransfer is on, returns all users except the caller.
+// If off, returns only admin users (so non-admins can still hand off to an admin).
+app.get('/api/users/assignable', requireAuth, (req, res) => {
+  const settings    = getSettings();
+  const currentUser = req.session.user.username;
+  const users       = getUsers();
+  const list = users.filter(u => {
+    if (u.username === currentUser) return false;
+    return settings.allowUserListForTransfer || u.admin;
+  });
+  res.json(list.map(u => ({ username: u.username, admin: !!u.admin })));
+});
+
+// POST /api/characters/:id/transfer — transfer ownership to another user.
+// Only the owner (or an admin) may call this. Moves all character files to
+// the new owner's directory and updates the owner field in the JSON.
+app.post('/api/characters/:id/transfer', requireAuth, validId, (req, res) => {
+  const found = findCharFile(req.params.id);
+  if (!found) return res.status(404).json({ error: 'Not found' });
+
+  if (!req.session.user.admin && found.username !== req.session.user.username) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const newOwner = String(req.body?.newOwner || '').trim();
+  if (!newOwner) return res.status(400).json({ error: 'newOwner is required' });
+  if (newOwner === found.username) {
+    return res.status(400).json({ error: 'Character already belongs to that user' });
+  }
+
+  const users = getUsers();
+  if (!users.find(u => u.username === newOwner)) {
+    return res.status(404).json({ error: 'Target user not found' });
+  }
+
+  ensureUserCharDir(newOwner);
+  const files = collectCharacterFiles(found.username, req.params.id);
+  for (const f of files) {
+    fs.renameSync(f.full, path.join(userCharDir(newOwner), path.basename(f.full)));
+  }
+
+  // Update the owner field in the moved character JSON.
+  const newCharPath = charPath(newOwner, req.params.id);
+  try {
+    const char  = JSON.parse(fs.readFileSync(newCharPath));
+    char.owner  = newOwner;
+    char.updatedAt = new Date().toISOString();
+    fs.writeFileSync(newCharPath, JSON.stringify(char, null, 2));
+  } catch { /* file move succeeded; metadata update is best-effort */ }
+
+  res.json({ ok: true, newOwner });
+});
+
 // ---------------------------------------------------------------------------
 // App settings (single shared file: app-chrome theme + external-link policy)
 // ---------------------------------------------------------------------------
 
 const SETTINGS_FILE    = path.join(DATA_DIR, 'settings.json');
-const DEFAULT_SETTINGS = { theme: 'tavern', allowExternalLinks: false, allowAttachments: false };
+const DEFAULT_SETTINGS = { theme: 'tavern', allowExternalLinks: false, allowAttachments: false, allowUserListForTransfer: false };
 
 function getSettings() {
   try {
@@ -1099,7 +1168,8 @@ app.put('/api/settings', requireAuth, requireAdmin, (req, res) => {
   const next = getSettings();
   if ('theme' in req.body)              next.theme = String(req.body.theme || 'tavern');
   if ('allowExternalLinks' in req.body) next.allowExternalLinks = !!req.body.allowExternalLinks;
-  if ('allowAttachments' in req.body)   next.allowAttachments   = !!req.body.allowAttachments;
+  if ('allowAttachments' in req.body)        next.allowAttachments        = !!req.body.allowAttachments;
+  if ('allowUserListForTransfer' in req.body) next.allowUserListForTransfer = !!req.body.allowUserListForTransfer;
   saveSettings(next);
   res.json(next);
 });
@@ -1431,7 +1501,8 @@ app.get('/api/characters', requireAuth, (req, res) => {
         sheetName:      data.sheetName,
         updatedAt:      data.updatedAt,
         owner:          data.owner,
-        campaignId:     data.campaignId || null,
+        campaignId:     data.campaignId   || null,
+        campaignName:   data.campaignName || null,
         status:         data.status || 'active',
         hasActiveShare: (data.shares || []).some(s => new Date(s.expiresAt) > now),
       });
@@ -2269,6 +2340,21 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend/build/index.html'));
 });
 
+// ---------------------------------------------------------------------------
+// Global error handler — must be the last app.use() and must have exactly
+// four parameters so Express recognises it as an error handler. Without this,
+// any unhandled synchronous throw inside a route lands in Express's built-in
+// fallback, which leaks the full stack trace to the client in non-production
+// environments.
+// ---------------------------------------------------------------------------
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error(err);
+  const isProd = process.env.NODE_ENV === 'production';
+  res.status(err.status || 500).json({
+    error: isProd ? 'Internal server error' : (err.message || 'Internal server error'),
+  });
+});
 
 const server = app.listen(PORT, () => console.log(`Server on ${PORT}`));
 

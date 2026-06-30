@@ -239,6 +239,16 @@ export const api = {
   async refreshSheets() {
     return handle(await fetchWithRetry(`${BASE}/api/sheets/refresh`, { method: 'POST' }));
   },
+  async getAssignableUsers() {
+    return handle(await fetchWithRetry(`${BASE}/api/users/assignable`));
+  },
+  async transferCharacter(id, newOwner) {
+    return handle(await fetchWithRetry(`${BASE}/api/characters/${id}/transfer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newOwner }),
+    }));
+  },
   async getLogs() {
     return handle(await fetchWithRetry(`${BASE}/api/admin/logs`));
   },

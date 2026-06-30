@@ -1,18 +1,18 @@
-const fs = require('fs');
-const path = require('path');
-const bcrypt = require('bcrypt');
+const fs       = require('fs');
+const path     = require('path');
+const bcrypt   = require('bcrypt');
+const readline = require('readline');
 const { validateUsername } = require('./validateUsername');
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 
-const args = process.argv.slice(2);
+const args     = process.argv.slice(2);
 const username = args[0];
-const password = args[1];
-const isAdmin = args.includes('--admin');
+const isAdmin  = args.includes('--admin');
 
-if (!username || !password) {
-  console.log('Usage: node adduser.js <username> <password> [--admin]');
+if (!username) {
+  console.log('Usage: node adduser.js <username> [--admin]');
   process.exit(1);
 }
 
@@ -22,6 +22,13 @@ if (usernameError) {
   process.exit(1);
 }
 
+function promptPassword() {
+  return new Promise(resolve => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    rl.question('Password: ', pw => { rl.close(); resolve(pw); });
+  });
+}
+
 async function main() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -29,18 +36,25 @@ async function main() {
     ? JSON.parse(fs.readFileSync(USERS_FILE))
     : [];
 
-  if (users.find(u => u.username === username)) {
+  if (users.find(u => u.username.toLowerCase() === username.toLowerCase())) {
     console.log(`User "${username}" already exists`);
+    process.exit(1);
+  }
+
+  const password = await promptPassword();
+  if (!password) {
+    console.log('Password cannot be empty');
     process.exit(1);
   }
 
   const hashed = await bcrypt.hash(password, 10);
   users.push({
     username,
-    password: hashed,
-    admin: isAdmin,
-    gm: false,
-    player: !isAdmin,
+    password:     hashed,
+    admin:        isAdmin,
+    gm:           false,
+    player:       !isAdmin,
+    tokenVersion: 1,
   });
 
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));

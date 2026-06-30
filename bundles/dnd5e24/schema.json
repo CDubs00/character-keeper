@@ -1,0 +1,180 @@
+{
+  "emptyCharacter": {
+    "info": {
+      "name": "",
+      "class": "",
+      "subclass": "",
+      "level": "",
+      "race": "",
+      "background": "",
+      "alignment": "",
+      "xp": 0,
+      "player": ""
+    },
+    "core": {
+      "heroic_inspiration": false,
+      "prof_bonus": "+2",
+      "passive_perception": 10
+    },
+    "abilities": {
+      "str": { "score": 10, "mod": "+0", "save": "+0", "save_prof": false },
+      "dex": { "score": 10, "mod": "+0", "save": "+0", "save_prof": false },
+      "con": { "score": 10, "mod": "+0", "save": "+0", "save_prof": false },
+      "int": { "score": 10, "mod": "+0", "save": "+0", "save_prof": false },
+      "wis": { "score": 10, "mod": "+0", "save": "+0", "save_prof": false },
+      "cha": { "score": 10, "mod": "+0", "save": "+0", "save_prof": false }
+    },
+    "combat": {
+      "ac": 10,
+      "ac_shield": false,
+      "initiative": "+0",
+      "speed": "30 ft",
+      "size": "Medium",
+      "hp_max": 0,
+      "hp_current": 0,
+      "hp_temp": 0,
+      "hit_dice_max": "",
+      "hit_dice_spent": "",
+      "death_success": 0,
+      "death_fail": 0,
+      "conditions": ""
+    },
+
+    "strSkills": [
+      { "name": "Athletics", "prof": 0, "bonus": "", "description": "" }
+    ],
+    "dexSkills": [
+      { "name": "Acrobatics",      "prof": 0, "bonus": "", "description": "" },
+      { "name": "Sleight of Hand", "prof": 0, "bonus": "", "description": "" },
+      { "name": "Stealth",         "prof": 0, "bonus": "", "description": "" }
+    ],
+    "intSkills": [
+      { "name": "Arcana",        "prof": 0, "bonus": "", "description": "" },
+      { "name": "History",       "prof": 0, "bonus": "", "description": "" },
+      { "name": "Investigation", "prof": 0, "bonus": "", "description": "" },
+      { "name": "Nature",        "prof": 0, "bonus": "", "description": "" },
+      { "name": "Religion",      "prof": 0, "bonus": "", "description": "" }
+    ],
+    "wisSkills": [
+      { "name": "Animal Handling", "prof": 0, "bonus": "", "description": "" },
+      { "name": "Insight",         "prof": 0, "bonus": "", "description": "" },
+      { "name": "Medicine",        "prof": 0, "bonus": "", "description": "" },
+      { "name": "Perception",      "prof": 0, "bonus": "", "description": "" },
+      { "name": "Survival",        "prof": 0, "bonus": "", "description": "" }
+    ],
+    "chaSkills": [
+      { "name": "Deception",    "prof": 0, "bonus": "", "description": "" },
+      { "name": "Intimidation", "prof": 0, "bonus": "", "description": "" },
+      { "name": "Performance",  "prof": 0, "bonus": "", "description": "" },
+      { "name": "Persuasion",   "prof": 0, "bonus": "", "description": "" }
+    ],
+
+    "attacks": [],
+    "spellcasting": {
+      "ability": "",
+      "mod": "",
+      "save_dc": "",
+      "attack_bonus": "",
+      "slots": {
+        "lvl1": { "total": 0, "used": 0 },
+        "lvl2": { "total": 0, "used": 0 },
+        "lvl3": { "total": 0, "used": 0 },
+        "lvl4": { "total": 0, "used": 0 },
+        "lvl5": { "total": 0, "used": 0 },
+        "lvl6": { "total": 0, "used": 0 },
+        "lvl7": { "total": 0, "used": 0 },
+        "lvl8": { "total": 0, "used": 0 },
+        "lvl9": { "total": 0, "used": 0 }
+      }
+    },
+    "spells": [],
+    "features": [],
+    "proficiencies": {
+      "armor_light":   false,
+      "armor_medium":  false,
+      "armor_heavy":   false,
+      "armor_shields": false,
+      "weapons":   "",
+      "tools":     "",
+      "languages": ""
+    },
+    "money": { "cp": 0, "sp": 0, "ep": 0, "gp": 0, "pp": 0 },
+    "equipment": [],
+    "treasure": [],
+    "background": {
+      "age": "",
+      "height": "",
+      "weight": "",
+      "eyes": "",
+      "skin": "",
+      "hair": "",
+      "personality": "",
+      "ideals": "",
+      "bonds": "",
+      "flaws": "",
+      "appearance": "",
+      "backstory": ""
+    },
+    "allies": [],
+    "sessions": []
+  },
+
+  "emptyStrSkill": { "name": "", "prof": 0, "bonus": "", "description": "" },
+  "emptyDexSkill": { "name": "", "prof": 0, "bonus": "", "description": "" },
+  "emptyIntSkill": { "name": "", "prof": 0, "bonus": "", "description": "" },
+  "emptyWisSkill": { "name": "", "prof": 0, "bonus": "", "description": "" },
+  "emptyChaSkill": { "name": "", "prof": 0, "bonus": "", "description": "" },
+
+  "emptyAttack":    { "name": "", "atk": "", "damage": "", "notes": "" },
+  "emptySpell":     { "prepared": 0, "level": "1", "name": "", "cast_time": "", "range": "", "concentration": 0, "ritual": 0, "material": 0, "notes": "", "description": "" },
+  "emptyFeature":   { "name": "", "source": "", "description": "" },
+  "emptyEquipment": { "name": "", "qty": 1, "wt": "", "description": "" },
+  "emptyTreasure":  { "name": "", "description": "" },
+  "emptyAlly":      { "name": "", "type": "Ally", "description": "" },
+
+  "sidecarPaths": ["sessions"],
+
+  "emptySession": { "date": "@today", "notes": "", "todos": "", "loot": "", "npcs": "", "misc": "" },
+
+  "searchable": {
+    "info.class":            "Class",
+    "info.subclass":         "Subclass",
+    "info.race":             "Species",
+    "info.background":       "Background",
+    "background.appearance": "Appearance",
+    "background.backstory":  "Backstory",
+    "features.name":         "Feature",
+    "features.description":  "Feature",
+    "attacks.name":          "Weapon",
+    "attacks.notes":         "Weapon",
+    "spells.name":           "Spell",
+    "spells.description":    "Spell"
+  },
+
+  "reference": {
+    "Acrobatics": "DEX. Stay on your feet in a tricky situation — balancing on ice or a ship's deck — or pull off a tumble, flip, or escape from a grapple.",
+    "Animal Handling": "WIS. Calm a spooked mount, keep a beast from bolting, intuit an animal's intentions, or control a trained creature.",
+    "Arcana": "INT. Recall lore about spells, magic items, eldritch symbols, planar travel, and the inhabitants of the planes.",
+    "Athletics": "STR. Cover difficult physical activity — climbing, jumping, and swimming — and most attempts to grapple or shove a creature.",
+    "Deception": "CHA. Convincingly hide the truth, whether through misdirection, a false identity, or a straight-faced lie.",
+    "History": "INT. Recall lore about historic events, legendary people, ancient kingdoms, past disputes, and lost civilizations.",
+    "Insight": "WIS. Determine the true intentions of a creature — read body language, speech habits, and changes in mannerisms to detect a lie.",
+    "Intimidation": "CHA. Influence someone through overt threats, hostile actions, or menacing presence.",
+    "Investigation": "INT. Deduce the location of a hidden object, discern a clue's meaning, or work out a trap's mechanism from available evidence.",
+    "Medicine": "WIS. Stabilize a dying companion or diagnose an illness.",
+    "Nature": "INT. Recall lore about terrain, plants and animals, the weather, and natural cycles.",
+    "Perception": "WIS. Spot, hear, or otherwise detect the presence of something. Your passive Perception is 10 + your Perception bonus.",
+    "Performance": "CHA. Delight an audience with music, dance, acting, storytelling, or some other entertainment.",
+    "Persuasion": "CHA. Influence someone with tact, social grace, or good nature — negotiate, inspire goodwill, or act in good faith.",
+    "Religion": "INT. Recall lore about deities, rites and prayers, religious hierarchies, holy symbols, and the practices of secret cults.",
+    "Sleight of Hand": "DEX. Perform legerdemain or manual trickery — plant something on someone, conceal an object, or pick a pocket.",
+    "Stealth": "DEX. Conceal yourself from enemies, slink past guards, slip away unnoticed, or sneak up without being seen or heard.",
+    "Survival": "WIS. Follow tracks, hunt game, guide your group through wastes, identify signs of nearby creatures, or predict the weather.",
+    "Heroic Inspiration": "A 2024 reward, given freely by the GM for great roleplay or by some species/feats on a long rest. Spend it to reroll any d20 — you must take the new result. You either have it or you don't; it doesn't stack.",
+    "Proficiency Bonus": "Added to ability checks, saving throws, and attack rolls you're proficient with. It scales with total level: +2 at 1st, rising to +6 by 17th.",
+    "Passive Perception": "Your always-on awareness, used by the GM to see what you notice without rolling: 10 + your Perception bonus (plus 5 with advantage, minus 5 with disadvantage).",
+    "Death Saves": "At 0 HP, roll a d20 at the start of each turn: 10+ is a success, 9 or lower a failure (a 1 counts as two failures, a 20 restores 1 HP). Three successes and you stabilize; three failures and you die. Any damage while at 0 HP is an automatic failure (a critical hit is two).",
+    "Hit Dice": "Spend a Hit Die on a Short Rest to roll and recover HP equal to the roll plus your Constitution modifier. You regain half your spent dice (rounded up) on a Long Rest.",
+    "Size": "Most player characters are Medium or Small. Size affects which spaces you can squeeze into and which mounts you can ride."
+  }
+}
