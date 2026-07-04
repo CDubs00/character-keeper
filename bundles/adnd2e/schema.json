@@ -56,6 +56,39 @@
 
     "weapons": [],
     "special_attacks": "",
+    "spellcasting": {
+      "per_level": { "l1": "", "l2": "", "l3": "", "l4": "", "l5": "", "l6": "", "l7": "", "l8": "", "l9": "" }
+    },
+    "spells": [],
+    "specializations": [],
+    "class_abilities": {
+      "turning": {
+        "skeleton": "", "skeleton_2": "",
+        "zombie": "", "zombie_2": "",
+        "ghoul": "", "ghoul_2": "",
+        "shadow": "", "shadow_2": "",
+        "wight": "", "wight_2": "",
+        "ghast": "", "ghast_2": "",
+        "wraith": "", "wraith_2": "",
+        "mummy": "", "mummy_2": "",
+        "spectre": "", "spectre_2": "",
+        "vampire": "", "vampire_2": "",
+        "ghost": "", "ghost_2": "",
+        "lich": "", "lich_2": "",
+        "special": "", "special_2": "",
+        "clerical_bonus": ""
+      },
+      "thieving": {
+        "pick_pockets": "", "open_locks": "", "find_traps": "", "move_silently": "",
+        "hide_shadows": "", "detect_noise": "", "climb_walls": "", "read_languages": "",
+        "bribe": "", "detect_illusion": "", "detect_magic": "", "escape_bonds": "",
+        "tunneling": "", "backstab_mult": ""
+      },
+      "styles": {
+        "single_weapon": "", "two_hander": "", "two_weapon": "", "weapon_shield": "", "specialized": ""
+      },
+      "spec_effects": ""
+    },
     "ammunition": [],
     "specials": [],
     "proficiencies": [],
@@ -96,6 +129,8 @@
   },
 
   "emptyWeapon":      { "name": "", "attacks": "", "attack_adj": "", "dmg_adj": "", "thac0": "", "damage": "", "range": "", "weight": "", "size": "", "type": "", "speed": "", "notes": "" },
+  "emptySpell":       { "name": "", "level": "", "school": "", "range": "", "components": "", "duration": "", "casting_time": "", "area": "", "save": "", "reversible": false, "pages": "", "effect": "" },
+  "emptySpecialization": { "name": "", "w": "", "e": "" },
   "emptyAmmunition":  { "name": "", "qty": 0 },
   "emptySpecial":     { "name": "", "description": "" },
   "emptyProficiency": { "name": "", "slots": "", "check": "", "description": "" },
@@ -125,6 +160,11 @@
     "Proficiencies": "Weapon proficiencies let you wield a weapon without the non-proficiency penalty. Nonweapon proficiencies (skills) are checked by rolling d20 and trying to roll at or under the governing ability score plus the listed modifier. The two small numbers track slots spent and your target.",
     "Bend Bars / Lift Gates": "A Strength-derived percentage chance to force open a stuck or barred portal, bend iron bars, or pull off a comparable feat of raw might. You normally get one attempt.",
     "Open Doors": "A Strength rating for forcing open heavy, stuck, or held doors. The second number (in parentheses on paper) is the slimmer chance against locked, barred, or magically held ones.",
-    "Wounds": "Track damage against your Hit Point total here. At 0 HP a character collapses and is dying; the optional Hovering on Death's Door rule lets them cling to life down to −10."
+    "Wounds": "Track damage against your Hit Point total here. At 0 HP a character collapses and is dying; the optional Hovering on Death's Door rule lets them cling to life down to −10.",
+    "Turning Ability": "Priests and paladins can Turn undead: roll d20 against the number listed for the creature's type. 'T' means automatically turned, 'D' means destroyed outright, and '—' means no effect is possible. Record the roll needed (and any second value your table tracks) per creature.",
+    "Thieving Skills": "Percentile skills — roll d100 and score at or UNDER the listed chance to succeed. Base scores come from class and race, adjusted by Dexterity and armor, plus discretionary points spent at each level.",
+    "Weapon Specialization": "Warriors may spend extra proficiency slots to Specialize (W) in one weapon, gaining bonuses to hit and damage plus extra attacks. Some campaigns allow further Expertise/Mastery (E) beyond specialization.",
+    "Fighting Styles": "Optional Complete Fighter's Handbook rules: a warrior can devote slots to a fighting style — single weapon, two-hander, two weapons, or weapon and shield — for bonuses when fighting in that style. WS marks a style specialization.",
+    "Back Stab": "A thief attacking a victim from behind with surprise strikes at +4 and multiplies weapon damage — ×2 at levels 1–4, rising to ×5 at level 13+."
   }
 }

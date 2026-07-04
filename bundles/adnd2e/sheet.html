@@ -50,8 +50,8 @@
           <div class="dv"><label>Dmg Adj</label><input type="text" data-bind="abilities.str.dmg" /></div>
           <div class="dv"><label>Wgt Allow</label><input type="text" data-bind="abilities.str.weight_allow" /></div>
           <div class="dv"><label>Max Press</label><input type="text" data-bind="abilities.str.max_press" /></div>
-          <div class="dv"><label data-ref="Open Doors">Open Drs</label><input type="text" data-bind="abilities.str.open_doors" /></div>
-          <div class="dv"><label data-ref="Bend Bars / Lift Gates">BB / LG</label><input type="text" data-bind="abilities.str.bend_bars" /></div>
+          <div class="dv"><label>Open Drs</label><input type="text" data-bind="abilities.str.open_doors" /></div>
+          <div class="dv"><label>BB / LG</label><input type="text" data-bind="abilities.str.bend_bars" /></div>
         </div>
       </div>
 
@@ -68,8 +68,8 @@
         <div class="abil-id"><span class="abil-abbr">CON</span><input class="abil-score" type="number" data-bind="abilities.con.score" min="0" /></div>
         <div class="abil-derived">
           <div class="dv"><label>HP Adj</label><input type="text" data-bind="abilities.con.hp_adj" /></div>
-          <div class="dv"><label data-ref="System Shock">Sys Shock</label><input type="text" data-bind="abilities.con.system_shock" /></div>
-          <div class="dv"><label data-ref="Resurrection Survival">Res Surv</label><input type="text" data-bind="abilities.con.resurrection" /></div>
+          <div class="dv"><label>Sys Shock</label><input type="text" data-bind="abilities.con.system_shock" /></div>
+          <div class="dv"><label>Res Surv</label><input type="text" data-bind="abilities.con.resurrection" /></div>
           <div class="dv"><label>Poison Save</label><input type="text" data-bind="abilities.con.poison_save" /></div>
           <div class="dv"><label>Regen</label><input type="text" data-bind="abilities.con.regen" /></div>
         </div>
@@ -136,93 +136,95 @@
     </div><!-- /band-top -->
 
 
-    <!-- ── Band: Armor & AC | Hit Points / Wounds ─────────────────────────── -->
-    <div class="band band-3">
+    <!-- ── Combat section: left col (Armor→Weapons→Special Attacks) stacks
+         independently from right col (Profs→Specials→Ammo) so neither
+         pushes the other down when rows are added. ──────────────────────── -->
+    <div class="combat-section">
+
+      <!-- LEFT: armor, weapons, special attacks -->
+      <div class="combat-left">
 
       <div class="card armor">
         <div class="sec-title">Armor &amp; Defense</div>
-        <div class="armor-top">
-          <div class="crest-ac">
-            <div class="shield">
-              <input type="number" data-bind="combat.ac" data-type="autofit" data-max-font="22" min="-20" />
+        <div class="armor-combined">
+          <div class="armor-defense-col">
+            <div class="armor-top">
+              <div class="crest-ac">
+                <div class="shield">
+                  <input type="number" data-bind="combat.ac" data-type="autofit" data-max-font="22" min="-20" />
+                </div>
+                <span class="shield-lbl" data-ref="Armor Class">Armor Class</span>
+              </div>
+              <div class="armor-stats">
+                <div class="adj-ac" data-ref="Adjusted AC">
+                  <div class="adj-row"><label>Surprised</label><input type="text" data-bind="combat.ac_surprised" /></div>
+                  <div class="adj-row"><label>Shieldless</label><input type="text" data-bind="combat.ac_shieldless" /></div>
+                  <div class="adj-row"><label>Rear</label><input type="text" data-bind="combat.ac_rear" /></div>
+                </div>
+              </div>
             </div>
-            <span class="shield-lbl" data-ref="Armor Class">Armor Class</span>
           </div>
-          <div class="armor-stats">
-            <div class="frame mv-box thac0-box"><label data-ref="THAC0">THAC0</label><input type="text" data-bind="combat.thac0" data-type="autofit" data-max-font="18" placeholder="20" /></div>
-            <div class="adj-ac" data-ref="Adjusted AC">
-              <div class="adj-row"><label>Surprised</label><input type="text" data-bind="combat.ac_surprised" /></div>
-              <div class="adj-row"><label>Shieldless</label><input type="text" data-bind="combat.ac_shieldless" /></div>
-              <div class="adj-row"><label>Rear</label><input type="text" data-bind="combat.ac_rear" /></div>
+          <div class="armor-hp-col">
+            <div class="sec-title">Hit Points</div>
+            <div class="hp-row">
+              <div class="frame hp-box"><label>Max</label><input type="number" data-bind="combat.hp_max" data-type="autofit" data-max-font="24" /></div>
+              <div class="frame hp-box"><label>Current</label><input type="number" data-bind="combat.hp_current" data-type="autofit" data-max-font="24" /></div>
             </div>
+            <div class="f gap-top"><label data-ref="Wounds">Wounds</label><textarea data-bind="combat.wounds" rows="4" placeholder="Track damage, conditions, and lingering injuries here."></textarea></div>
           </div>
         </div>
         <div class="f gap-top"><label>Armor Type (Pieces)</label><textarea data-bind="combat.armor_pieces" rows="2" placeholder="Chain mail, large shield, helm…"></textarea></div>
         <div class="f"><label>Defenses</label><textarea data-bind="combat.defenses" rows="2" placeholder="Rings, cloaks, magical protections…"></textarea></div>
-      </div>
+      </div><!-- /card armor -->
 
-      <div class="card hp-card">
-        <div class="sec-title">Hit Points</div>
-        <div class="hp-row">
-          <div class="frame hp-box"><label>Max</label><input type="number" data-bind="combat.hp_max" data-type="autofit" data-max-font="24" /></div>
-          <div class="frame hp-box"><label>Current</label><input type="number" data-bind="combat.hp_current" data-type="autofit" data-max-font="24" /></div>
+      <!-- ── Weapon Combat ──────────────────────────────────── -->
+      <div class="card weapons">
+        <div class="sec-head">
+          <div class="sec-title" data-ref="Weapon Speed">Weapon Combat</div>
+          <button class="add-btn" data-action="add" data-target="weapons">+ Add Weapon</button>
         </div>
-        <div class="f gap-top"><label data-ref="Wounds">Wounds</label><textarea data-bind="combat.wounds" rows="6" placeholder="Track damage, conditions, and lingering injuries here."></textarea></div>
+        <div class="cf-table-scroll">
+          <table class="sheet-table">
+            <thead>
+              <tr>
+                <th>Weapon</th>
+                <th style="width:5%">#AT</th>
+                <th style="width:8%">Atk Adj</th>
+                <th style="width:8%">Dmg Adj</th>
+                <th style="width:8%">THAC0</th>
+                <th style="width:12%">Damage S/L</th>
+                <th style="width:7%">Range</th>
+                <th style="width:5%">Wt</th>
+                <th style="width:5%">Size</th>
+                <th style="width:5%">Type</th>
+                <th style="width:6%">Speed</th>
+                <th class="tools-col"></th>
+              </tr>
+            </thead>
+            <tbody data-list="weapons">
+              <tr data-item>
+                <td><input type="text" data-bind="name" placeholder="Long sword" /></td>
+                <td><input type="text" data-bind="attacks" placeholder="1" /></td>
+                <td><input type="text" data-bind="attack_adj" placeholder="+1" /></td>
+                <td><input type="text" data-bind="dmg_adj" placeholder="+2" /></td>
+                <td><input type="text" data-bind="thac0" placeholder="19" /></td>
+                <td><input type="text" data-bind="damage" placeholder="1d8 / 1d12" /></td>
+                <td><input type="text" data-bind="range" placeholder="—" /></td>
+                <td><input type="text" data-bind="weight" placeholder="4" /></td>
+                <td><input type="text" data-bind="size" placeholder="M" /></td>
+                <td><input type="text" data-bind="type" placeholder="S" /></td>
+                <td><input type="text" data-bind="speed" placeholder="5" /></td>
+                <td class="tools-col"><span class="row-tools">
+                  <button data-action="info" data-bind="notes"></button>
+                  <button class="rm-btn" data-action="remove">✕</button>
+                </span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
-    </div>
-
-    <!-- ── Weapon Combat (full-width) ─────────────────────────────────────── -->
-    <div class="card weapons">
-      <div class="sec-head">
-        <div class="sec-title" data-ref="Weapon Speed">Weapon Combat</div>
-        <button class="add-btn" data-action="add" data-target="weapons">+ Add Weapon</button>
-      </div>
-      <table class="sheet-table">
-        <thead>
-          <tr>
-            <th style="width:18%">Weapon</th>
-            <th>#AT</th>
-            <th>Atk Adj</th>
-            <th>Dmg Adj</th>
-            <th>THAC0</th>
-            <th style="width:13%">Damage S/L</th>
-            <th>Range</th>
-            <th>Wt</th>
-            <th>Size</th>
-            <th>Type</th>
-            <th>Speed</th>
-            <th class="tools-col"></th>
-          </tr>
-        </thead>
-        <tbody data-list="weapons">
-          <tr data-item>
-            <td><input type="text" data-bind="name" placeholder="Long sword" /></td>
-            <td><input type="text" data-bind="attacks" placeholder="1" /></td>
-            <td><input type="text" data-bind="attack_adj" placeholder="+1" /></td>
-            <td><input type="text" data-bind="dmg_adj" placeholder="+2" /></td>
-            <td><input type="text" data-bind="thac0" placeholder="19" /></td>
-            <td><input type="text" data-bind="damage" placeholder="1d8 / 1d12" /></td>
-            <td><input type="text" data-bind="range" placeholder="—" /></td>
-            <td><input type="text" data-bind="weight" placeholder="4" /></td>
-            <td><input type="text" data-bind="size" placeholder="M" /></td>
-            <td><input type="text" data-bind="type" placeholder="S" /></td>
-            <td><input type="text" data-bind="speed" placeholder="5" /></td>
-            <td class="tools-col"><span class="row-tools">
-              <button data-action="info" data-bind="notes"></button>
-              <button class="rm-btn" data-action="remove">✕</button>
-            </span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- ── Special Attacks + Ammunition ───────────────────────────────────── -->
-    <div class="band band-special">
-      <div class="card spec-attacks">
-        <div class="sec-title">Special Attacks</div>
-        <textarea data-bind="special_attacks" rows="4" placeholder="Back-stab multiplier, breath weapon, called shots, charge…"></textarea>
-      </div>
+      <!-- ── Ammunition ────────────────────────────────────── -->
       <div class="card ammo">
         <div class="sec-head">
           <div class="sec-title">Ammunition</div>
@@ -241,23 +243,243 @@
           </tbody>
         </table>
       </div>
-    </div>
 
-    <!-- ── Special Abilities | Proficiencies / Skills / Languages ─────────── -->
-    <div class="band band-bottom">
+      <!-- ── Special Attacks ────────────────────────────────── -->
+      <div class="card spec-attacks">
+        <div class="sec-title">Special Attacks</div>
+        <textarea data-bind="special_attacks" rows="4" placeholder="Back-stab multiplier, breath weapon, called shots, charge…"></textarea>
+      </div>
 
-      <div class="card specials">
+      </div><!-- /combat-left -->
+
+      <!-- RIGHT: proficiencies, special abilities, ammunition -->
+      <div class="combat-right">
+
+        <div class="card profs">
+          <div class="sec-head">
+            <div class="sec-title" data-ref="Proficiencies">Proficiencies / Skills / Languages</div>
+            <button class="add-btn" data-action="add" data-target="proficiencies">+ Add</button>
+          </div>
+          <table class="sheet-table">
+            <thead>
+              <tr>
+                <th>Proficiency</th>
+                <th class="prof-ability-col">Ability</th>
+                <th class="prof-num-col">Slots</th>
+                <th class="prof-num-col">Check</th>
+                <th class="tools-col"></th>
+              </tr>
+            </thead>
+            <tbody data-list="proficiencies">
+              <tr data-item>
+                <td><input type="text" data-bind="name" placeholder="Swimming / Elvish / Long sword" /></td>
+                <td><select data-bind="ability">
+                  <option value="">—</option>
+                  <option value="STR">STR</option>
+                  <option value="DEX">DEX</option>
+                  <option value="CON">CON</option>
+                  <option value="INT">INT</option>
+                  <option value="WIS">WIS</option>
+                  <option value="CHA">CHA</option>
+                </select></td>
+                <td><input type="text" data-bind="slots" placeholder="1" /></td>
+                <td><input type="text" data-bind="check" placeholder="13" /></td>
+                <td class="tools-col"><span class="row-tools">
+                  <button data-action="info" data-bind="description"></button>
+                  <button class="rm-btn" data-action="remove">✕</button>
+                </span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card specials">
+          <div class="sec-head">
+            <div class="sec-title">Special Abilities</div>
+            <button class="add-btn" data-action="add" data-target="specials">+ Add</button>
+          </div>
+          <table class="sheet-table">
+            <thead><tr><th>Ability</th><th class="specials-source-col">Source</th><th class="tools-col"></th></tr></thead>
+            <tbody data-list="specials">
+              <tr data-item>
+                <td><input type="text" data-bind="name" placeholder="Infravision 60 ft" /></td>
+                <td><input type="text" data-bind="source" placeholder="Race" /></td>
+                <td class="tools-col"><span class="row-tools">
+                  <button data-action="info" data-bind="description"></button>
+                  <button class="rm-btn" data-action="remove">✕</button>
+                </span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- /combat-right -->
+
+    </div><!-- /combat-section -->
+
+
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       TAB 2 — SPELLS & CLASS ABILITIES
+       Two layers of grid:
+       - .sa-grid: outer grid, row 1 has four equal-width cards
+         (Turning | Thieving | Fighting Styles | Weapon Spec).
+       - .sa-log-area: a single full-width child in row 2 that runs
+         its own inner 150px | 1fr grid — Log Head spans both, Spells
+         per Level fills the narrow column, Spell Log fills the wide
+         one. Two-layer nesting is what lets Spells-per-Level be
+         narrower than the row-1 cards without forcing them to match.
+       Mobile: both grids collapse to a single column (see theme.css).
+       ════════════════════════════════════════════════════════════════════ -->
+  <div data-tab="Spells &amp; Abilities">
+
+    <div class="sa-grid">
+
+      <div class="card turning sa-turning">
+      <div data-collapsible="Turning Ability" data-collapsible-persist="ui.collapsed.turning" data-ref="Turning Ability">
+        <div class="turn-row"><label>Skeleton (1 HD)</label><input type="text" data-bind="class_abilities.turning.skeleton" /><input type="text" data-bind="class_abilities.turning.skeleton_2" /></div>
+        <div class="turn-row"><label>Zombie (1 HD)</label><input type="text" data-bind="class_abilities.turning.zombie" /><input type="text" data-bind="class_abilities.turning.zombie_2" /></div>
+        <div class="turn-row"><label>Ghoul (2 HD)</label><input type="text" data-bind="class_abilities.turning.ghoul" /><input type="text" data-bind="class_abilities.turning.ghoul_2" /></div>
+        <div class="turn-row"><label>Shadow (4 HD)</label><input type="text" data-bind="class_abilities.turning.shadow" /><input type="text" data-bind="class_abilities.turning.shadow_2" /></div>
+        <div class="turn-row"><label>Wight (5 HD)</label><input type="text" data-bind="class_abilities.turning.wight" /><input type="text" data-bind="class_abilities.turning.wight_2" /></div>
+        <div class="turn-row"><label>Ghast (5 HD)</label><input type="text" data-bind="class_abilities.turning.ghast" /><input type="text" data-bind="class_abilities.turning.ghast_2" /></div>
+        <div class="turn-row"><label>Wraith (6 HD)</label><input type="text" data-bind="class_abilities.turning.wraith" /><input type="text" data-bind="class_abilities.turning.wraith_2" /></div>
+        <div class="turn-row"><label>Mummy (7 HD)</label><input type="text" data-bind="class_abilities.turning.mummy" /><input type="text" data-bind="class_abilities.turning.mummy_2" /></div>
+        <div class="turn-row"><label>Spectre (8 HD)</label><input type="text" data-bind="class_abilities.turning.spectre" /><input type="text" data-bind="class_abilities.turning.spectre_2" /></div>
+        <div class="turn-row"><label>Vampire (9 HD)</label><input type="text" data-bind="class_abilities.turning.vampire" /><input type="text" data-bind="class_abilities.turning.vampire_2" /></div>
+        <div class="turn-row"><label>Ghost (10 HD)</label><input type="text" data-bind="class_abilities.turning.ghost" /><input type="text" data-bind="class_abilities.turning.ghost_2" /></div>
+        <div class="turn-row"><label>Lich (11+ HD)</label><input type="text" data-bind="class_abilities.turning.lich" /><input type="text" data-bind="class_abilities.turning.lich_2" /></div>
+        <div class="turn-row"><label>Special</label><input type="text" data-bind="class_abilities.turning.special" /><input type="text" data-bind="class_abilities.turning.special_2" /></div>
+        <div class="turn-row wide-val"><label>Clerical Bonus</label><input type="text" data-bind="class_abilities.turning.clerical_bonus" /></div>
+      </div>
+      </div>
+
+      <div class="card thieving sa-thieving">
+      <div data-collapsible="Thieving Skills" data-collapsible-persist="ui.collapsed.thieving" data-ref="Thieving Skills">
+        <div class="thief-row"><label>Pick Pockets</label><input type="text" data-bind="class_abilities.thieving.pick_pockets" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Open Locks</label><input type="text" data-bind="class_abilities.thieving.open_locks" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Find/Remove Traps</label><input type="text" data-bind="class_abilities.thieving.find_traps" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Move Silently</label><input type="text" data-bind="class_abilities.thieving.move_silently" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Hide in Shadows</label><input type="text" data-bind="class_abilities.thieving.hide_shadows" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Detect Noise</label><input type="text" data-bind="class_abilities.thieving.detect_noise" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Climb Walls</label><input type="text" data-bind="class_abilities.thieving.climb_walls" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Read Languages</label><input type="text" data-bind="class_abilities.thieving.read_languages" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Bribe</label><input type="text" data-bind="class_abilities.thieving.bribe" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Detect Illusion</label><input type="text" data-bind="class_abilities.thieving.detect_illusion" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Detect Magic</label><input type="text" data-bind="class_abilities.thieving.detect_magic" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Escape Bonds</label><input type="text" data-bind="class_abilities.thieving.escape_bonds" /><span class="pct">%</span></div>
+        <div class="thief-row"><label>Tunneling</label><input type="text" data-bind="class_abilities.thieving.tunneling" /><span class="pct">%</span></div>
+        <div class="thief-row"><label data-ref="Back Stab">Back Stab Multiplier</label><input type="text" data-bind="class_abilities.thieving.backstab_mult" /><span class="pct"></span></div>
+      </div>
+      </div>
+
+      <div class="card fstyles sa-fstyles">
+      <div data-collapsible="Fighting Styles" data-collapsible-persist="ui.collapsed.fstyles" data-ref="Fighting Styles">
+        <div class="style-row"><label>Single Weapon Style</label><input type="text" data-bind="class_abilities.styles.single_weapon" /></div>
+        <div class="style-row"><label>Two Hander Style</label><input type="text" data-bind="class_abilities.styles.two_hander" /></div>
+        <div class="style-row"><label>Two Weapon Style</label><input type="text" data-bind="class_abilities.styles.two_weapon" /></div>
+        <div class="style-row"><label>Weapon &amp; Shield Style</label><input type="text" data-bind="class_abilities.styles.weapon_shield" /></div>
+        <div class="style-row"><label>Specialized Style</label><input type="text" data-bind="class_abilities.styles.specialized" /></div>
+      </div>
+      </div>
+
+      <div class="sa-log-area">
+
+      <div class="sessions-head spells-head sa-log-head">
+        <div class="sec-title">Spell Log</div>
+        <button class="add-btn add-session" data-action="add" data-target="spells">+ Add Spell</button>
+      </div>
+
+      <div class="card spl-card sa-spl-level">
+      <div data-collapsible="Spells per Level" data-collapsible-persist="ui.collapsed.spl_level">
+        <div class="spl-row">
+          <div class="spl-cell"><label>1st</label><input type="text" data-bind="spellcasting.per_level.l1" /></div>
+          <div class="spl-cell"><label>2nd</label><input type="text" data-bind="spellcasting.per_level.l2" /></div>
+          <div class="spl-cell"><label>3rd</label><input type="text" data-bind="spellcasting.per_level.l3" /></div>
+          <div class="spl-cell"><label>4th</label><input type="text" data-bind="spellcasting.per_level.l4" /></div>
+          <div class="spl-cell"><label>5th</label><input type="text" data-bind="spellcasting.per_level.l5" /></div>
+          <div class="spl-cell"><label>6th</label><input type="text" data-bind="spellcasting.per_level.l6" /></div>
+          <div class="spl-cell"><label>7th</label><input type="text" data-bind="spellcasting.per_level.l7" /></div>
+          <div class="spl-cell"><label>8th</label><input type="text" data-bind="spellcasting.per_level.l8" /></div>
+          <div class="spl-cell"><label>9th</label><input type="text" data-bind="spellcasting.per_level.l9" /></div>
+        </div>
+      </div>
+      </div>
+
+      <div class="sa-spell-log" data-list="spells">
+        <div class="card spell-card" data-item data-collapse-after="0">
+          <div data-collapsible="Spell" data-collapsible-bind="name">
+            <div class="spell-grid">
+              <div class="f spell-name"><label>Spell</label><input type="text" data-bind="name" placeholder="Fireball" /></div>
+              <div class="f"><label>Level</label><input type="text" data-bind="level" placeholder="3" /></div>
+              <div class="f"><label>School / Sphere</label><input type="text" data-bind="school" placeholder="Evocation" /></div>
+              <div class="f"><label>Range</label><input type="text" data-bind="range" placeholder="10 yds + 10/lvl" /></div>
+              <div class="f"><label>Components</label><input type="text" data-bind="components" placeholder="V, S, M" /></div>
+              <div class="f"><label>Duration</label><input type="text" data-bind="duration" placeholder="Instantaneous" /></div>
+              <div class="f"><label>Casting Time</label><input type="text" data-bind="casting_time" placeholder="3" /></div>
+              <div class="f"><label>Area of Effect</label><input type="text" data-bind="area" placeholder="20-ft radius" /></div>
+              <div class="f"><label>Saving Throw</label><input type="text" data-bind="save" placeholder="½" /></div>
+              <div class="frame mini-cell rev-cell"><label>Reversible?</label><div data-bind="reversible" data-type="toggle"></div></div>
+              <div class="f"><label>Pages</label><input type="text" data-bind="pages" placeholder="PHB 179" /></div>
+              <div class="f span-all"><label>Effect</label><textarea data-bind="effect" rows="2" placeholder="What the spell does — damage, effects, material components worth noting…"></textarea></div>
+            </div>
+            <div class="session-footer">
+              <button class="rm-btn session-rm" data-action="remove">✕ Delete Spell</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      </div><!-- /sa-log-area -->
+
+      <div class="card wspec sa-wspec">
+      <div data-collapsible="Weapon Specialization" data-collapsible-persist="ui.collapsed.wspec" data-ref="Weapon Specialization">
+        <button class="add-btn" data-collapsible-actions data-action="add" data-target="specializations" data-max="12">+ Add</button>
+        <table class="sheet-table">
+          <thead><tr><th>Weapon</th><th class="we-col">W</th><th class="we-col">E</th><th class="tools-col"></th></tr></thead>
+          <tbody data-list="specializations">
+            <tr data-item>
+              <td><input type="text" data-bind="name" placeholder="Bastard Sword" /></td>
+              <td><input type="text" data-bind="w" /></td>
+              <td><input type="text" data-bind="e" /></td>
+              <td class="tools-col"><span class="row-tools">
+                <button class="rm-btn" data-action="remove">✕</button>
+              </span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      </div>
+
+    </div><!-- /sa-grid -->
+
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════════════════════
+       TAB 3 — GEAR & TREASURE  (page two of the classic record)
+       ════════════════════════════════════════════════════════════════════ -->
+  <div data-tab="Gear &amp; Treasure">
+
+    <div class="gt-layout">
+
+      <div class="card gear gt-gear">
         <div class="sec-head">
-          <div class="sec-title">Special Abilities</div>
-          <button class="add-btn" data-action="add" data-target="specials">+ Add</button>
+          <div class="sec-title">Gear</div>
+          <button class="add-btn" data-action="add" data-target="gear">+ Add Item</button>
         </div>
         <table class="sheet-table">
-          <thead><tr><th>Ability</th><th class="tools-col"></th></tr></thead>
-          <tbody data-list="specials">
+          <thead>
+            <tr><th>Item</th><th style="width:26%">Location</th><th class="wt-col">Wt</th><th class="tools-col"></th></tr>
+          </thead>
+          <tbody data-list="gear">
             <tr data-item>
-              <td><input type="text" data-bind="name" placeholder="Infravision 60 ft" /></td>
+              <td><input type="text" data-bind="name" placeholder="Rope, 50 ft" /></td>
+              <td><input type="text" data-bind="location" placeholder="Backpack" /></td>
+              <td><input type="text" data-bind="wt" placeholder="20" /></td>
               <td class="tools-col"><span class="row-tools">
-                <button data-action="info" data-bind="description"></button>
                 <button class="rm-btn" data-action="remove">✕</button>
               </span></td>
             </tr>
@@ -265,82 +487,18 @@
         </table>
       </div>
 
-      <div class="card profs">
-        <div class="sec-head">
-          <div class="sec-title" data-ref="Proficiencies">Proficiencies / Skills / Languages</div>
-          <button class="add-btn" data-action="add" data-target="proficiencies">+ Add</button>
-        </div>
-        <div class="prof-head"><span>Proficiency</span><span>Slots</span><span>Check</span><span></span></div>
-        <div data-list="proficiencies">
-          <div class="prof-row" data-item>
-            <input class="prof-name" type="text" data-bind="name" placeholder="Swimming / Elvish / Long sword" />
-            <input class="prof-num" type="text" data-bind="slots" placeholder="1" />
-            <input class="prof-num" type="text" data-bind="check" placeholder="13" />
-            <span class="row-tools">
-              <button data-action="info" data-bind="description"></button>
-              <button class="rm-btn" data-action="remove">✕</button>
-            </span>
-          </div>
+      <div class="card money gt-coins">
+        <div class="sec-title">Coins</div>
+        <div class="money-row">
+          <div class="coin"><label>PP</label><input type="number" data-bind="money.pp" min="0" /></div>
+          <div class="coin"><label>GP</label><input type="number" data-bind="money.gp" min="0" /></div>
+          <div class="coin"><label>EP</label><input type="number" data-bind="money.ep" min="0" /></div>
+          <div class="coin"><label>SP</label><input type="number" data-bind="money.sp" min="0" /></div>
+          <div class="coin"><label>CP</label><input type="number" data-bind="money.cp" min="0" /></div>
         </div>
       </div>
 
-    </div>
-
-  </div>
-
-
-  <!-- ════════════════════════════════════════════════════════════════════
-       TAB 2 — GEAR & TREASURE  (page two of the classic record)
-       ════════════════════════════════════════════════════════════════════ -->
-  <div data-tab="Gear &amp; Treasure">
-
-    <div class="card gear">
-      <div class="sec-head">
-        <div class="sec-title">Gear</div>
-        <button class="add-btn" data-action="add" data-target="gear">+ Add Item</button>
-      </div>
-      <table class="sheet-table">
-        <thead>
-          <tr><th>Item</th><th style="width:26%">Location</th><th class="wt-col">Wt</th><th class="tools-col"></th></tr>
-        </thead>
-        <tbody data-list="gear">
-          <tr data-item>
-            <td><input type="text" data-bind="name" placeholder="Rope, 50 ft" /></td>
-            <td><input type="text" data-bind="location" placeholder="Backpack" /></td>
-            <td><input type="text" data-bind="wt" placeholder="20" /></td>
-            <td class="tools-col"><span class="row-tools">
-              <button class="rm-btn" data-action="remove">✕</button>
-            </span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="band band-notes">
-      <div class="card">
-        <div class="sec-title">Magical Items &amp; Notes</div>
-        <textarea data-bind="magic_notes" rows="6" placeholder="Magical items, command words, small maps, anything worth remembering…"></textarea>
-      </div>
-      <div class="card">
-        <div class="sec-title">Other Valuables</div>
-        <textarea data-bind="valuables" rows="6" placeholder="Art objects, deeds, trade goods, jewelry…"></textarea>
-      </div>
-    </div>
-
-    <div class="card money">
-      <div class="sec-title">Coins</div>
-      <div class="money-row">
-        <div class="coin"><label>PP</label><input type="number" data-bind="money.pp" min="0" /></div>
-        <div class="coin"><label>GP</label><input type="number" data-bind="money.gp" min="0" /></div>
-        <div class="coin"><label>EP</label><input type="number" data-bind="money.ep" min="0" /></div>
-        <div class="coin"><label>SP</label><input type="number" data-bind="money.sp" min="0" /></div>
-        <div class="coin"><label>CP</label><input type="number" data-bind="money.cp" min="0" /></div>
-      </div>
-    </div>
-
-    <div class="band band-treasure">
-
-      <div class="card gems">
+      <div class="card gems gt-gems">
         <div class="sec-head">
           <div class="sec-title">Gems</div>
           <button class="add-btn" data-action="add" data-target="gems">+ Add</button>
@@ -359,7 +517,13 @@
         </table>
       </div>
 
-      <div class="card xp-supplies">
+      <div class="card gt-magical">
+        <div class="sec-title">Magical Items &amp; Other Valuables</div>
+        <textarea data-bind="magic_notes" rows="4" placeholder="Magical items, command words, small maps, anything worth remembering…"></textarea>
+        <textarea data-bind="valuables" rows="3" placeholder="Art objects, deeds, trade goods, jewelry…"></textarea>
+      </div>
+
+      <div class="card xp-supplies gt-xp">
         <div class="sec-title">Experience</div>
         <div class="xp-grid">
           <div class="f"><label>Have</label><input type="text" data-bind="experience.have" placeholder="0" /></div>
@@ -420,7 +584,7 @@
 
 
   <!-- ════════════════════════════════════════════════════════════════════
-       TAB 3 — BACKGROUND  (portrait, vitals, description, backstory)
+       TAB 4 — BACKGROUND  (portrait, vitals, description, backstory)
        ════════════════════════════════════════════════════════════════════ -->
   <div data-tab="Background">
 
@@ -494,7 +658,7 @@
 
 
   <!-- ════════════════════════════════════════════════════════════════════
-       TAB 4 — SESSION LOG  (sidecar; excluded from image export)
+       TAB 5 — SESSION LOG  (sidecar; excluded from image export)
        ════════════════════════════════════════════════════════════════════ -->
   <div data-tab="Sessions" data-export-skip>
 

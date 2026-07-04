@@ -10,7 +10,7 @@
 
 /* ── Tokens ───────────────────────────────────────────────── */
 .sheet-root {
-  --field:       #5cc2a0;   /* the classic seafoam page */
+  --field:       #75D5BC;   /* the classic seafoam page */
   --field-deep:  #49ab8b;
   --panel:       #ffffff;   /* white field cells */
   --panel-soft:  #eef9f4;   /* faint green tint for alt rows */
@@ -148,6 +148,8 @@
   white-space: nowrap;
 }
 .sheet-root .add-btn:hover { background: var(--green); color: #fff; }
+.sheet-root .add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.sheet-root .add-btn:disabled:hover { background: rgba(15,92,71,0.06); color: var(--green); }
 
 .sheet-root .rm-btn { color: var(--ink-faint); padding: 0 4px; font-size: 11px; background: transparent; }
 .sheet-root .rm-btn:hover { color: #9a2b1f; }
@@ -156,7 +158,7 @@
 .sheet-root .cf-info-btn { font-size: 13px; padding: 0 3px; color: var(--ink-faint); opacity: 0.55; background: transparent; }
 .sheet-root .cf-info-btn.has-content { color: var(--green-bright); opacity: 1; }
 
-.sheet-root .gap-top { margin-top: 12px; }
+.sheet-root .gap-top { margin-top: 10px; }
 .sheet-root .f { min-width: 0; }
 
 /* The reusable double-ruled "frame" look (value boxes, ability score) */
@@ -313,20 +315,63 @@
 .sheet-root .relations { margin-bottom: 10px; }
 
 /* Band weighting where two cards shouldn't be 50/50 */
-.sheet-root .band-3 .armor { flex: 1.35; }
-.sheet-root .band-special .spec-attacks { flex: 1.4; }
 .sheet-root .band-treasure .gems { flex: 1.1; }
 
-/* Top band — classic three-up: Abilities (wide) · Movement (narrow) · Saves.
-   Equal-height cards (like the printed sheet's three boxes); movement and
-   saves let their rows grow to fill so there's no ragged green gap. */
-.sheet-root .band-top { align-items: stretch; }
-.sheet-root .band-top .abilities { flex: 3.1; }
-.sheet-root .band-top .movement  { flex: 0.9;  display: flex; flex-direction: column; }
-.sheet-root .band-top .saves     { flex: 1.4;  display: flex; flex-direction: column; }
+/* Gear & Treasure tab: Gear fills left column, right column stacks Coins → Gems → Magical → XP */
+.sheet-root .gt-layout {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+  align-items: start;
+}
+.sheet-root .gt-gear {
+  grid-column: 1;
+  grid-row: 1 / 6;
+  margin-bottom: 0;
+}
+.sheet-root .gt-coins,
+.sheet-root .gt-gems,
+.sheet-root .gt-magical,
+.sheet-root .gt-xp {
+  grid-column: 2;
+  margin-bottom: 0;
+}
+.sheet-root .gt-magical textarea + textarea { margin-top: 6px; }
+
+/* Use CSS grid for both rows so column 1 is pixel-identical in both.
+   Matching grid-template-columns + same gap = abilities and armor always align. */
+.sheet-root .band-top {
+  display: grid;
+  grid-template-columns: 3.1fr 0.9fr 1.4fr;
+  gap: 10px;
+  align-items: stretch;
+  margin-bottom: 10px;
+}
+/* Two independent columns: left (Armor+Weapons+Specials) and right (Profs+Abilities+Ammo).
+   Neither column affects the other's height so adding proficiencies never
+   pushes weapon combat down. Proportions match band-top (3.1fr : 2.3fr). */
+.sheet-root .combat-section {
+  display: grid;
+  grid-template-columns: 3.1fr 2.3fr;
+  gap: 10px;
+  margin-bottom: 10px;
+  align-items: start;
+}
+.sheet-root .combat-left,
+.sheet-root .combat-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Inner flex layouts for movement and saves cards (unchanged) */
+.sheet-root .band-top .movement { display: flex; flex-direction: column; }
+.sheet-root .band-top .saves    { display: flex; flex-direction: column; }
 .sheet-root .band-top .movement .mv-list { flex: 1; }
 .sheet-root .band-top .movement .mv-line { flex: 1; }
-.sheet-root .band-top .saves .save-row { flex: 1; }
+.sheet-root .band-top .saves .save-row   { flex: 1; }
 
 /* ════════════════════════════════════════════════════════════
    ABILITIES — score block + derived sub-stat grid (the showpiece)
@@ -481,10 +526,32 @@
 .sheet-root .mv-line.base input { border-color: var(--green); box-shadow: inset 0 0 0 1px #fff; }
 
 /* ════════════════════════════════════════════════════════════
-   ARMOR & DEFENSE — shield crest + adjusted AC
+   ARMOR & DEFENSE — shield crest + adjusted AC + Hit Points
    ════════════════════════════════════════════════════════════ */
-.sheet-root .armor-top { display: flex; gap: 12px; align-items: flex-start; }
-.sheet-root .crest-ac { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 0 0 auto; }
+
+/* Side-by-side: armor/AC on the left, HP on the right */
+/* Grid enforces hard column boundaries so adj-ac cannot bleed into HP */
+.sheet-root .armor-combined {
+  display: grid;
+  grid-template-columns: 290px 1fr;
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+.sheet-root .armor-defense-col { min-width: 0; }
+.sheet-root .armor-hp-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sheet-root .armor-hp-col .sec-title { margin-bottom: 4px; }
+/* Pull armor content closer to the card title */
+.sheet-root .armor > .sec-title { margin-bottom: 2px; }
+
+/* Grid gives the shield a hard 76px column so the "ARMOR CLASS" label
+   can't push crest-ac wider and squeeze the adj-ac off-screen */
+.sheet-root .armor-top { display: grid; grid-template-columns: 76px 1fr; gap: 10px; align-items: start; }
+.sheet-root .crest-ac { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 /* A clipped shape can't carry a real border — the browser clips the border
    away on the angled edges. Instead the shield IS the outline colour, and a
    ::before inset by the line width paints the interior, leaving an even line
@@ -527,14 +594,6 @@
   display: inline-flex; align-items: center; gap: 3px;
 }
 .sheet-root .armor-stats { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.sheet-root .thac0-box { text-align: center; }
-.sheet-root .thac0-box label { display: inline-flex; align-items: center; gap: 3px; justify-content: center; }
-.sheet-root .thac0-box input {
-  text-align: center;
-  font-family: var(--f-display);
-  font-weight: 700; font-size: 16px;
-  border: none; background: transparent; padding: 0;
-}
 .sheet-root .adj-ac {
   border: 1px solid var(--line-soft);
   border-radius: 3px;
@@ -591,10 +650,13 @@
 .sheet-root .sheet-table .tools-col { width: 50px; white-space: nowrap; }
 .sheet-root .sheet-table .qty-col { width: 22%; }
 .sheet-root .sheet-table .wt-col  { width: 16%; }
+.sheet-root .specials-source-col   { width: 72px; }
 .sheet-root .cf-table-scroll { overflow-x: auto; }
 
 /* Weapon table: keep the many short columns from collapsing too far. */
-.sheet-root .weapons .sheet-table { min-width: 760px; }
+.sheet-root .weapons .sheet-table { min-width: 560px; }
+.sheet-root .weapons .sheet-table th { text-align: center; }
+.sheet-root .weapons .sheet-table th:first-child { text-align: left; }
 .sheet-root .henchmen .sheet-table { min-width: 720px; }
 .sheet-root .weapons .sheet-table td input,
 .sheet-root .henchmen .sheet-table td input { text-align: center; }
@@ -605,38 +667,32 @@
 .sheet-root .ammo .sheet-table td input { text-align: left; }
 .sheet-root .ammo .qty-col input { text-align: center; font-family: var(--f-display); font-weight: 700; }
 
-/* ── Proficiencies list ──────────────────────────────────── */
-.sheet-root .prof-head,
-.sheet-root .prof-row {
-  display: grid;
-  grid-template-columns: 1fr 48px 48px 50px;
-  gap: 6px;
-  align-items: center;
-}
-.sheet-root .prof-head {
-  font-family: var(--f-display);
-  font-size: 8px; font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--ink-faint);
-  padding-bottom: 3px;
-  border-bottom: 1px solid var(--line-soft);
-  margin-bottom: 3px;
-}
-.sheet-root .prof-head span:nth-child(2),
-.sheet-root .prof-head span:nth-child(3) { text-align: center; }
-.sheet-root .prof-row {
-  padding: 2px 0;
-  border-bottom: 1px solid var(--line-soft);
-}
-.sheet-root .prof-row:last-child { border-bottom: none; }
-.sheet-root .prof-num {
+/* ── Proficiencies table ─────────────────────────────────── */
+.sheet-root .profs .sheet-table td input { text-align: left; }
+.sheet-root .prof-ability-col { width: 52px; text-align: center; }
+.sheet-root .prof-num-col     { width: 44px; text-align: center; }
+.sheet-root .profs .sheet-table td:nth-child(2),
+.sheet-root .profs .sheet-table td:nth-child(3),
+.sheet-root .profs .sheet-table td:nth-child(4) { text-align: center; }
+.sheet-root .profs .sheet-table td:nth-child(3) input,
+.sheet-root .profs .sheet-table td:nth-child(4) input {
   text-align: center;
   font-family: var(--f-display);
   font-weight: 700;
+}
+.sheet-root .profs .sheet-table select {
+  width: 100%;
+  text-align: center;
+  text-align-last: center;
+  font-family: var(--f-display);
+  font-size: 11px;
+  font-weight: 700;
+  background: transparent;
   border: 1px solid var(--line-soft);
   border-radius: 2px;
-  background: var(--panel);
-  padding: 1px 0;
+  color: var(--ink);
+  padding: 1px 2px;
+  cursor: pointer;
 }
 
 /* ── Mini-cell (toggles like the 10% XP bonus) ───────────── */
@@ -647,7 +703,195 @@
 .sheet-root .mini-cell label { margin-bottom: 0; }
 
 /* ════════════════════════════════════════════════════════════
-   TAB 2 — GEAR & TREASURE
+   TAB 2 — SPELLS & CLASS ABILITIES
+   Outer .sa-grid is intentionally SIMPLE: four equal-width cells
+   in row 1 (Turning | Thieving | Fighting Styles | Weapon Spec)
+   and one full-width child in row 2, .sa-log-area, which owns
+   everything below.
+
+     row 1:  "turn  thief  styles  wspec"     ← four repeat(4, 1fr)
+     row 2:  ".sa-log-area (grid-column: 1 / -1)"
+
+   Why the inner .sa-log-area exists:
+   Spells per Level's ledger is a narrow strip of just 9 rows —
+   it should NOT eat the same width as Turning's 14-row list on
+   the row above it. But CSS grid columns are shared across all
+   rows in a grid, so we can't say "col 1 is 1fr in row 1, then
+   150px in row 2" without a nested grid.
+
+   .sa-log-area is that nested grid. It spans the full width of
+   the outer grid (grid-column: 1 / -1), so it gets 100% of the
+   tab — no dead zone under Weapon Spec — and then divides ITS
+   own width into two columns:  150px  |  1fr. That gives us
+   the narrow Spells-per-Level + wide Spell Log the mockup asks
+   for, without touching row 1 at all.
+
+   Weapon Spec still occupies only row 1 of the outer grid (does
+   not span down). Row 1's height is max(turn, thief, styles,
+   wspec) — that's ordinary, unambiguous grid sizing, unlike a
+   multi-row-spanning item whose contribution to auto-sized
+   tracks was the source of an earlier layout bug. Turning's
+   list is the tallest of the four; Weapon Spec sits at the top
+   of its cell (align-self: start) and lets the rest be empty
+   if its list is short.
+
+   Removing Effects of Specialization (see sheet.html) means
+   Fighting Styles is the only thing in the "styles" cell, so
+   collapsing all four cards in row 1 genuinely shrinks that row
+   to header height and the Spell Log area reads as the top of
+   the tab once they're closed — no :has() stretches, no flex
+   fill hacks.
+   ════════════════════════════════════════════════════════════ */
+.sheet-root .sa-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.sheet-root .sa-turning    { grid-column: 1; grid-row: 1; }
+.sheet-root .sa-thieving   { grid-column: 2; grid-row: 1; }
+.sheet-root .sa-fstyles    { grid-column: 3; grid-row: 1; }
+.sheet-root .sa-wspec      { grid-column: 4; grid-row: 1; align-self: start; }
+
+/* The log area sits in row 2 of the outer grid, spans full width,
+   and runs its own narrow+wide inner grid. loghead spans both
+   inner columns (so the "+ Add Spell" button lands at the right
+   edge of the Spell Log, not the right edge of Spells-per-Level). */
+.sheet-root .sa-log-area {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  grid-template-areas:
+    "loghead loghead"
+    "spl     log";
+  gap: 8px;
+  align-items: start;
+}
+.sheet-root .sa-log-head   { grid-area: loghead; margin: 4px 0 0; }
+.sheet-root .sa-spl-level  { grid-area: spl; }
+.sheet-root .sa-spell-log  { grid-area: log; min-width: 0; }
+
+.sheet-root .sa-turning,
+.sheet-root .sa-thieving,
+.sheet-root .sa-fstyles,
+.sheet-root .sa-wspec { min-width: 0; }
+/* Spells per Level's title ("Spells per Level") is the widest
+   thing that has to fit its 150px column — keep it on one line
+   rather than wrapping into the row underneath. */
+.sheet-root .sa-spl-level .cf-collapsible-title { white-space: nowrap; }
+
+/* Condensed type scale for this tab only — smaller labels/inputs
+   so four columns of dense ledgers fit without crowding. */
+.sheet-root .sa-grid label { font-size: 9px; }
+.sheet-root .sa-grid input,
+.sheet-root .sa-grid select { font-size: 11px; padding: 1px 3px; }
+.sheet-root .sa-grid .card { padding: 6px 6px; }
+.sheet-root .sa-grid .sec-title { font-size: 10px; margin-bottom: 4px; }
+.sheet-root .sa-grid .cf-collapsible-header { font-size: 10px; }
+.sheet-root .sa-grid .cf-collapsible-title { line-height: 1.4; }
+.sheet-root .sa-grid .cf-collapsible-extra .add-btn { font-size: 10px; padding: 0 6px; }
+/* The info icon that rides in these same headers (Turning,
+   Thieving, Fighting Styles, Weapon Specialization) at the tab's
+   condensed scale — sized down to match, not the default ⓘ size. */
+.sheet-root .sa-grid .cf-collapsible-extra .cf-info-btn { font-size: 11px; }
+
+/* Spells-per-level — vertical ladder (label left, value right), narrow
+   column that sits beside the Spell Log rather than a full-width strip. */
+.sheet-root .sa-spl-level { margin-bottom: 0; }
+.sheet-root .spl-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sheet-root .spl-cell {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 1px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sheet-root .spl-cell:last-child { border-bottom: none; }
+.sheet-root .spl-cell label { margin-bottom: 0; text-align: left; }
+.sheet-root .spl-cell input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 2px #fff;
+  padding: 2px 0;
+}
+
+/* Expandable spell entries — condensed session-card collapsible look */
+.sheet-root .sa-log-head { margin-bottom: 6px; }
+.sheet-root .sa-spell-log .spell-card { border-top-color: var(--green-bright); margin-bottom: 6px; padding: 6px 8px; }
+.sheet-root .sa-spell-log .spell-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px 8px;
+}
+.sheet-root .sa-spell-log .spell-grid .spell-name { grid-column: 1 / 3; }
+.sheet-root .sa-spell-log .spell-grid .span-all { grid-column: 1 / -1; }
+.sheet-root .sa-spell-log .rev-cell { align-self: end; padding: 2px 7px; }
+.sheet-root .sa-spell-log textarea { padding: 3px 5px; font-size: 12px; }
+.sheet-root .sa-spell-log .cf-collapsible-header { font-size: 11px; padding: 1px 0; }
+.sheet-root .sa-spell-log .session-footer { margin-top: 4px; }
+
+/* Class-abilities ledgers — label left, value box(es) right, condensed */
+.sheet-root .turn-row,
+.sheet-root .thief-row,
+.sheet-root .style-row {
+  display: grid;
+  gap: 4px;
+  align-items: center;
+  padding: 1px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sheet-root .turn-row:last-child,
+.sheet-root .thief-row:last-child,
+.sheet-root .style-row:last-child { border-bottom: none; }
+.sheet-root .turn-row  { grid-template-columns: 1fr 32px 32px; }
+.sheet-root .turn-row.wide-val { grid-template-columns: 1fr 70px; }
+.sheet-root .thief-row { grid-template-columns: 1fr 38px 12px; }
+.sheet-root .style-row { grid-template-columns: 1fr 60px; }
+.sheet-root .turn-row label,
+.sheet-root .thief-row label,
+.sheet-root .style-row label { margin-bottom: 0; }
+.sheet-root .turn-row input,
+.sheet-root .thief-row input,
+.sheet-root .style-row input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--panel);
+  padding: 1px 0;
+}
+.sheet-root .thief-row .pct {
+  font-family: var(--f-display);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+
+/* Weapon Specialization mini-table */
+.sheet-root .sa-wspec .sheet-table th,
+.sheet-root .sa-wspec .sheet-table td { padding: 1px 3px; }
+.sheet-root .we-col { width: 30px; text-align: center; }
+.sheet-root .sa-wspec .sheet-table td:nth-child(2) input,
+.sheet-root .sa-wspec .sheet-table td:nth-child(3) input {
+  text-align: center;
+  font-family: var(--f-display);
+  font-weight: 700;
+}
+
+/* ════════════════════════════════════════════════════════════
+   TAB 3 — GEAR & TREASURE
    ════════════════════════════════════════════════════════════ */
 .sheet-root .money-row { display: flex; gap: 8px; }
 .sheet-root .coin { flex: 1; text-align: center; }
@@ -675,7 +919,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════
-   TAB 3 — BACKGROUND
+   TAB 4 — BACKGROUND
    ════════════════════════════════════════════════════════════ */
 .sheet-root .bg-grid {
   display: grid;
@@ -708,7 +952,7 @@
 }
 
 /* ════════════════════════════════════════════════════════════
-   TAB 4 — SESSION LOG
+   TAB 5 — SESSION LOG
    ════════════════════════════════════════════════════════════ */
 .sheet-root .sessions-head {
   display: flex; align-items: baseline; justify-content: space-between;
@@ -749,9 +993,13 @@
   .sheet-root .adnd-logo { max-height: 70px; }
   .sheet-root .identity-grid { grid-template-columns: 1fr 1fr; }
 
-  /* All two-card bands stack. */
+  /* All flex bands stack. */
   .sheet-root .band { flex-direction: column; }
   .sheet-root .band > .card { width: 100%; }
+
+  /* Grid bands collapse to single column on phone. */
+  .sheet-root .band-top { grid-template-columns: 1fr; }
+  .sheet-root .combat-section { grid-template-columns: 1fr; }
 
   /* Abilities: keep the score block on the LEFT with its derived fields to
      the right (just narrower than desktop); the grid relaxes to 2-across so
@@ -768,13 +1016,52 @@
   .sheet-root .vitals-grid { grid-template-columns: 1fr 1fr; }
   .sheet-root .xp-grid { grid-template-columns: 1fr 1fr; }
 
-  /* Armor block stacks the shield above its stats. */
-  .sheet-root .armor-top { flex-direction: column; align-items: center; }
+  /* Armor combined: stack defense above HP on phone. */
+  .sheet-root .armor-combined { grid-template-columns: 1fr; }
+
+  /* Armor block stacks the shield above its stats (now a grid, not flex). */
+  .sheet-root .armor-top { grid-template-columns: 1fr; justify-items: center; }
   .sheet-root .armor-stats { width: 100%; }
+
+  /* Gear & Treasure: collapse to single column, DOM order = Gear → Coins → Gems → Magical → XP. */
+  .sheet-root .gt-layout { grid-template-columns: 1fr; }
+  .sheet-root .gt-gear { grid-column: 1; grid-row: auto; }
+  .sheet-root .gt-coins,
+  .sheet-root .gt-gems,
+  .sheet-root .gt-magical,
+  .sheet-root .gt-xp { grid-column: 1; }
 
   /* Coins wrap. */
   .sheet-root .money-row { flex-wrap: wrap; }
   .sheet-root .coin { flex: 1 1 28%; }
+
+  /* Spells & Abilities: stack the outer grid into one column
+     (Turning → Thieving → Styles → Weapon Spec → the whole log
+     area), and stack the log area's own inner grid into one
+     column too (Log-Head → Spells per Level → Spell Log). The
+     `grid-row: auto` resets undo the row-1 pins the desktop
+     layout uses to prevent auto-placement from stranding Weapon
+     Spec below the log area — with one column, there's only one
+     row-per-item anyway. */
+  .sheet-root .sa-grid { grid-template-columns: 1fr; }
+  .sheet-root .sa-turning,
+  .sheet-root .sa-thieving,
+  .sheet-root .sa-fstyles,
+  .sheet-root .sa-wspec { grid-column: 1; grid-row: auto; }
+  .sheet-root .sa-log-area {
+    grid-row: auto;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "loghead"
+      "spl"
+      "log";
+  }
+  .sheet-root .sa-spl-level .cf-collapsible-title { white-space: normal; }
+  .sheet-root .sa-grid label { font-size: 8px; }
+  .sheet-root .sa-grid input,
+  .sheet-root .sa-grid select { font-size: 13px; }
+  .sheet-root .sa-spell-log .spell-grid { grid-template-columns: 1fr 1fr; }
+  .sheet-root .sa-spell-log .spell-grid .spell-name { grid-column: 1 / -1; }
 
   /* Background + sessions tabs. */
   .sheet-root .bg-grid { grid-template-columns: 1fr; }

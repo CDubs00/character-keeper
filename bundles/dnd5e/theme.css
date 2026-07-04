@@ -438,11 +438,15 @@
   border-collapse: collapse; 
   min-width: 600px;}
 
+.sheet-root .sp-mid .sheet-table { min-width: 0; }
 .sheet-root .sheet-table th {
   font-family: var(--f-display);
-  font-size: 9px; font-weight: 600;
-  letter-spacing: 0.08em; text-transform: uppercase;
-  text-align: left; color: var(--ink-faint);
+  font-size: 9px; 
+  font-weight: 600;
+  letter-spacing: 0.08em; 
+  text-transform: uppercase;
+  text-align: left; 
+  color: var(--ink-faint);
   padding: 2px 4px;
   border-bottom: 1px solid var(--line);
 }

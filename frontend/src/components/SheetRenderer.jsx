@@ -278,24 +278,33 @@ const XP_MILESTONES = new Set([5, 10, 15, 20, 25, 30]);
 
 // Collapsible section. Opt-in: an author puts data-collapsible="Title" on an
 // element (and optionally data-collapsed to start closed). The renderer hands
-// the element's children here as the body; this component owns the open state,
-// so it persists across the renderer's re-walks. Author classes are preserved.
-function Collapsible({ title, defaultOpen = true, className, children, exportMode = false, ...rest }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const isOpen = exportMode ? true : open;            // export renders fully open
+// the element's children here as the body. By default this component owns the
+// open state itself (so it persists across the renderer's re-walks but resets
+// on reload). Passing `open` + `onToggle` switches it to controlled mode — the
+// caller (the renderer, when data-collapsible-persist names a character-data
+// path) owns the state instead, so it's saved with the character and survives
+// reloads/shares. Author classes are preserved.
+function Collapsible({ title, defaultOpen = true, open, onToggle, headerExtra, className, children, exportMode = false, ...rest }) {
+  const [localOpen, setLocalOpen] = useState(defaultOpen);
+  const controlled = open !== undefined;
+  const isOpen = exportMode ? true : (controlled ? open : localOpen);
+  const toggle = controlled ? onToggle : () => setLocalOpen((o) => !o);
   const cls = ['cf-collapsible', className].filter(Boolean).join(' ');
   return React.createElement('div', { ...rest, className: cls, 'data-open': isOpen ? 'true' : 'false' },
-    React.createElement('button', {
-      type: 'button',
-      className: 'cf-collapsible-header',
-      'aria-expanded': isOpen ? 'true' : 'false',
-      onClick: () => setOpen((o) => !o),
-      disabled: exportMode,
-    },
-      React.createElement('span', { className: 'cf-collapsible-title' }, title),
-      exportMode ? null : React.createElement('span', { className: 'cf-collapsible-caret' }, '▾'),
+    React.createElement('div', { className: 'cf-collapsible-header' },
+      React.createElement('button', {
+        type: 'button',
+        className: 'cf-collapsible-toggle',
+        'aria-expanded': isOpen ? 'true' : 'false',
+        onClick: toggle,
+        disabled: exportMode,
+      },
+        React.createElement('span', { className: 'cf-collapsible-title' }, title),
+        exportMode ? null : React.createElement('span', { className: 'cf-collapsible-caret' }, '▾'),
+      ),
+      headerExtra ? React.createElement('span', { className: 'cf-collapsible-extra' }, headerExtra) : null,
     ),
-    isOpen && React.createElement('div', { className: 'cf-collapsible-body' }, ...children),
+    isOpen && React.createElement('div', { className: 'cf-collapsible-body' }, children),
   );
 }
 
@@ -598,10 +607,12 @@ function AddDialog({ title, fields, base, onConfirm, onCancel }) {
 // opens the dialog; otherwise it appends an empty item directly (the existing
 // behavior — swade-core and risus-core keep working unchanged).
 // data-insert="prepend" puts new items at the top (e.g. newest session first).
-function AddItemButton({ label, target, prepend, formTitle, char, updateRef, schemaRef, hostProps }) {
+function AddItemButton({ label, target, prepend, formTitle, max, char, updateRef, schemaRef, hostProps }) {
   const [show, setShow] = useState(false);
   const schema = schemaRef.current;
   const form = schema?.addForms?.[target];
+  const current = resolvePath(char, target) ?? [];
+  const atMax = max !== undefined && current.length >= max;
 
   const doAdd = (item) => {
     const current = resolvePath(char, target) ?? [];
@@ -614,7 +625,7 @@ function AddItemButton({ label, target, prepend, formTitle, char, updateRef, sch
   };
 
   return React.createElement(React.Fragment, null,
-    React.createElement('button', { ...hostProps, onClick, type: 'button' }, label),
+    React.createElement('button', { ...hostProps, onClick, type: 'button', disabled: hostProps.disabled || atMax }, label),
     show ? React.createElement(AddDialog, {
       title: formTitle || label.replace(/^\+\s*/, ''),
       fields: form,
@@ -737,13 +748,13 @@ function wrapIfTable(tag, element, key) {
 // attribute — they're load-bearing.
 const ENGINE_ATTRS = new Set([
   'data-bind','data-type','data-list','data-item','data-action','data-target','data-max','data-attr-source',
-  'data-tabs','data-tab','data-ref','data-ref-key','data-insert','data-collapsible-bind','data-form-title','data-title',
+  'data-tabs','data-tab','data-ref','data-ref-key','data-insert','data-collapsible-bind','data-collapsible-persist','data-form-title','data-title',
   'data-max-font','data-min-font','data-max-bind','data-min',
   'data-md-group','data-md-toggle',
   // Engine attributes that were used by bundles but missed in the original set.
   // Pre-hardening these "worked" because buildProps passed everything through;
   // once buildProps enforces an allowlist, anything not here is dropped.
-  'data-collapsible','data-collapse-after','data-export-skip',
+  'data-collapsible','data-collapse-after','data-export-skip','data-collapsible-actions',
 ]);
 
 // ── Parse a CSS string into a React style object ─────────────────────────────
@@ -1219,15 +1230,52 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
   }
 
   // ── collapsible (opt-in: data-collapsible="Title", data-collapsed=start closed) ──
+  // data-collapsible-persist="path" persists the open/closed state onto the
+  // character at that path (as a "collapsed" boolean) instead of component
+  // state, so it survives reload/share — used for whole-card collapse toggles
+  // a bundle wants remembered per character. Without it, state is local-only,
+  // same as before this option existed.
+  // data-ref="Key" on the same element renders the ⓘ reference icon beside
+  // the header (can't live inside the toggle button — that'd nest <button>s).
+  // A direct child flagged data-collapsible-actions (e.g. a "+ Add" button)
+  // is pulled out of the body and rendered beside the header the same way.
   if (attrs['data-collapsible'] !== undefined) {
     const title       = attrs['data-collapsible'] || '';
+    const bindPath    = attrs['data-collapsible-persist'];
     const defaultOpen = attrs['data-collapsed'] === undefined;
-    const kids = Array.from(node.childNodes)
+
+    let openProp, onToggle;
+    if (bindPath) {
+      const collapsed = resolvePath(char, bindPath);
+      const isOpen = collapsed === undefined ? defaultOpen : !collapsed;
+      openProp = isOpen;
+      onToggle = sheetReadOnly ? () => {} : () => updateRef.current(setPath(char, bindPath, isOpen));
+    }
+
+    const refKey  = attrs['data-ref'];
+    const refText = refKey ? schemaRef.current?.reference?.[refKey] : null;
+    const info = refText
+      ? React.createElement(InfoButton, { key: '__info', title: attrs['data-title'] || refKey, refText, text: '', editable: false })
+      : null;
+
+    const childEls   = Array.from(node.childNodes);
+    const actionNodes = childEls.filter((n) => n.nodeType === 1 && n.hasAttribute('data-collapsible-actions'));
+    const bodyNodes   = childEls.filter((n) => !(n.nodeType === 1 && n.hasAttribute('data-collapsible-actions')));
+
+    const actions = actionNodes
       .map((child, i) => renderNodeFull(child, char, updateRef, schemaRef, charId, readOnly, i))
       .filter(Boolean);
+    const kids = bodyNodes
+      .map((child, i) => renderNodeFull(child, char, updateRef, schemaRef, charId, readOnly, i))
+      .filter(Boolean);
+
+    const headerExtra = (info || actions.length)
+      ? React.createElement(React.Fragment, null, info, ...actions)
+      : null;
+
     const hostProps = buildProps('div', attrs, key,
-      ['data-collapsible','data-collapsed','data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
-    return React.createElement(Collapsible, { ...hostProps, title, defaultOpen, exportMode: sheetExportMode }, ...kids);
+      ['data-collapsible','data-collapsed','data-collapsible-persist','data-ref','data-title','data-bind','data-type','data-list','data-item','data-action','data-target','data-max']);
+    return React.createElement(Collapsible, { ...hostProps, title, defaultOpen, open: openProp, onToggle, headerExtra, exportMode: sheetExportMode }, ...kids);
   }
 
   // ── markdown edit group (opt-in: data-md-group on a wrapper) ───────────────
@@ -1321,13 +1369,14 @@ function renderNodeFull(node, char, updateRef, schemaRef, charId, readOnly, key 
   // new items at the top of the list.
   if (dataAction === 'add' && dataTarget) {
     if (sheetReadOnly) return null;
-    const { key: _hostKey, ...hostProps } = buildProps('button', attrs, key, ['data-action','data-target','data-insert','data-form-title']);
+    const { key: _hostKey, ...hostProps } = buildProps('button', attrs, key, ['data-action','data-target','data-insert','data-form-title','data-max']);
     return React.createElement(AddItemButton, {
       key,
       label: node.textContent,
       target: dataTarget,
       prepend: attrs['data-insert'] === 'prepend',
       formTitle: attrs['data-form-title'],
+      max: dataMax !== undefined ? Number(dataMax) : undefined,
       char, updateRef, schemaRef,
       hostProps,
     });

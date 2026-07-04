@@ -359,14 +359,25 @@ label {
 }
 
 /* Collapsible sections (opt-in via data-collapsible on an element). The
-   renderer injects a header button + a body region; these are the default
-   open/closed styles. Authors restyle freely via theme.css. */
+   renderer injects a header row + a body region; these are the default
+   open/closed styles. Authors restyle freely via theme.css.
+   The header is a flex row: a .cf-collapsible-toggle button (title + caret,
+   click target for open/close) plus an optional .cf-collapsible-extra
+   (e.g. an "+ Add" button or info icon) that sits beside it, outside the
+   toggle button, so the two never end up as nested <button>s. */
 :where(.cf-collapsible) > .cf-collapsible-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   width: 100%;
+}
+:where(.cf-collapsible-header) .cf-collapsible-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
   cursor: pointer;
   background: none;
   border: none;
@@ -375,6 +386,9 @@ label {
   letter-spacing: inherit;
   color: inherit;
   padding: 0;
+}
+:where(.cf-collapsible-header) .cf-collapsible-extra {
+  flex-shrink: 0;
 }
 :where(.cf-collapsible-header) .cf-collapsible-caret {
   transition: transform 0.15s ease;
