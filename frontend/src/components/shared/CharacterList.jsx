@@ -4,11 +4,12 @@ import ActionMenu from './ActionMenu';
 import ShareModal from './ShareModal';
 import { THEMES, applyTheme } from '../../theme';
 import { GearIcon, SwordsIcon, PaletteIcon, SignOutIcon, ShareIcon,
-         SkullIcon, BoxIcon, PauseIcon, SunsetIcon, PlayIcon, SearchIcon, DiceIcon } from './Icons';
+         SkullIcon, BoxIcon, PauseIcon, SunsetIcon, PlayIcon, SearchIcon, DiceIcon, GlobeIcon } from './Icons';
 import VersionTag from './VersionTag';
 import ExportStage from '../ExportStage';   // adjust if your tree differs — same folder as SheetRenderer.jsx
 import { Toast } from './UI';           // wherever UI.jsx actually lives for this file
-import { zipSync, strToU8 } from 'fflate';    
+import { zipSync, strToU8 } from 'fflate';   
+ 
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -2059,7 +2060,7 @@ function highlightMatch(text, term) {
 // On return, the cached data renders instantly while a background refresh runs.
 let rosterCache = null;
 
-export default function CharacterList({ onSelect, onNew, user, onUser, onLogout }) {
+export default function CharacterList({ onSelect, onNew, user, onUser, onLogout, onWorlds }) {
   const [chars,         setChars]         = useState(rosterCache?.chars     ?? []);
   const [campaigns,     setCampaigns]     = useState(rosterCache?.campaigns ?? []);
   const [loading,       setLoading]       = useState(rosterCache === null);
@@ -2421,6 +2422,7 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout 
             <ActionMenu label={user?.username || 'Menu'} items={[
               user?.admin && { label: iconLabel(GearIcon, 'Admin'),       onClick: () => setShowAdmin(true) },
               isGM &&        { label: iconLabel(SwordsIcon, 'Campaigns'),  onClick: () => setShowCampaigns(true) },
+              isGM &&        { label: iconLabel(GlobeIcon, 'Worlds'),      onClick: () => onWorlds?.() },
               {                label: iconLabel(PaletteIcon, 'Appearance'), onClick: () => setShowAppearance(true) },
               {                label: iconLabel(SignOutIcon, 'Sign Out'),   onClick: onLogout },
             ]} />

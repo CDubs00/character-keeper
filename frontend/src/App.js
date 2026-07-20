@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import CharacterList from './components/shared/CharacterList';
 import CharacterSheet from './components/CharacterSheet';
+import Worlds from './components/shared/Worlds';
 import Login from './components/shared/Login';
 import Setup from './components/shared/Setup';
 import ShareView from './components/shared/ShareView';
@@ -9,6 +10,15 @@ import { applyTheme } from './theme';
 
 function RequireAuth({ user, children }) {
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+// Worlds is a GM-only surface. A non-GM who lands on /worlds (bookmark, typed
+// URL) is redirected to their characters rather than shown an empty page — the
+// server already refuses to hand them any worlds, this just keeps the UI honest.
+function RequireGM({ user, children }) {
+  if (!user) return <Navigate to="/login" replace />;
+  if (!(user.gm || user.admin)) return <Navigate to="/characters" replace />;
   return children;
 }
 
@@ -54,13 +64,25 @@ function AppRoutes({ user, setUser, needsSetup, setNeedsSetup }) {
       } />
       <Route path="/characters" element={
         <RequireAuth user={user}>
-          <CharacterList onSelect={openSheet} onNew={openSheet} user={user} onUser={setUser} onLogout={logout} />
+          <CharacterList
+            onSelect={openSheet}
+            onNew={openSheet}
+            user={user}
+            onUser={setUser}
+            onLogout={logout}
+            onWorlds={() => navigate('/worlds')}
+          />
         </RequireAuth>
       } />
       <Route path="/characters/:id" element={
         <RequireAuth user={user}>
           <SheetRoute user={user} />
         </RequireAuth>
+      } />
+      <Route path="/worlds" element={
+        <RequireGM user={user}>
+          <Worlds user={user} onBack={() => navigate('/characters')} />
+        </RequireGM>
       } />
       <Route path="/share/:token" element={<ShareView />} />
       <Route path="*" element={

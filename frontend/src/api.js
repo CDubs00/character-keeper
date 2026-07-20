@@ -163,6 +163,33 @@ export const api = {
       body: JSON.stringify({ status }),
     }));
   },
+    async getWorlds() {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds`));
+  },
+  async createWorld(data) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }));
+  },
+  async updateWorld(id, data) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }));
+  },
+  async deleteWorld(id) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${id}`, { method: 'DELETE' }));
+  },
+  async setWorldStatus(id, status) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    }));
+  },
   async getUsers() {
     return handle(await fetchWithRetry(`${BASE}/api/users`));
   },
