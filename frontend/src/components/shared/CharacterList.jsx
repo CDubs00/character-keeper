@@ -635,7 +635,7 @@ function NewCharacterModal({ onConfirm, onCancel }) {
   };
 
   return (
-    <Modal title="New Character" subtitle="Character Keeper" onClose={onCancel} footer={
+    <Modal title="New Character" subtitle="Keep" onClose={onCancel} footer={
       <button
         className="btn-primary"
         onClick={handleConfirm}
@@ -1682,39 +1682,57 @@ function AdminModal({ currentUser, onClose }) {
 function CampaignsModal({ onClose, onStatusChange }) {
   const [campaigns, setCampaigns] = useState([]);
   const [sheets,    setSheets]    = useState([]);
+  const [worlds,    setWorlds]    = useState([]);   // the GM's own worlds, for the link selector (§4.7)
   const [loading,   setLoading]   = useState(true);
   const [creating,  setCreating]  = useState(false);
   const [newName,   setNewName]   = useState('');
   const [newSheet,  setNewSheet]  = useState('');
+  const [newWorld,  setNewWorld]  = useState('');   // '' = None (standalone)
   const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     Promise.all([
       fetch('/api/campaigns', { credentials: 'include' }).then(r => r.json()),
       fetch('/api/sheets',    { credentials: 'include' }).then(r => r.json()),
-    ]).then(([camps, sh]) => {
+      api.getWorlds().catch(() => []),
+    ]).then(([camps, sh, wl]) => {
       setCampaigns(camps);
       const enabled = sh.filter(s => s.enabled !== false);
       setSheets(enabled);
+      // Only worlds this GM OWNS can be linked to a campaign (the server validates
+      // same-GM ownership). Since §4.8, getWorlds() also returns member worlds
+      // (role !== 'owner'), so filter those out of the link selector.
+      setWorlds(Array.isArray(wl) ? wl.filter(w => !w.role || w.role === 'owner') : []);
       if (enabled.length === 1) setNewSheet(enabled[0].sheetId);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
 
+  const worldName = (id) => worlds.find(w => w.id === id)?.name || null;
+
   const handleCreate = async () => {
     if (!newName.trim()) return;
     const sheet = sheets.find(s => s.sheetId === newSheet);
-    const res   = await fetch('/api/campaigns', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName.trim(), sheetId: sheet?.sheetId || null, sheetName: sheet?.name || null }),
+    const campaign = await api.createCampaign({
+      name: newName.trim(),
+      sheetId: sheet?.sheetId || null,
+      sheetName: sheet?.name || null,
+      worldId: newWorld || null,
     });
-    if (res.ok) {
-      const campaign = await res.json();
+    if (campaign && campaign.id) {
       setCampaigns(prev => [...prev, campaign]);
       setNewName('');
+      setNewWorld('');
       setCreating(false);
+    }
+  };
+
+  // Link/unlink an existing campaign to one of the GM's worlds. Server validates
+  // same-GM ownership; the world's access ledger is untouched (access persists).
+  const handleSetWorld = async (id, worldId) => {
+    const updated = await api.updateCampaign(id, { worldId: worldId || null });
+    if (updated && updated.id) {
+      setCampaigns(prev => prev.map(c => (c.id === id ? updated : c)));
     }
   };
 
@@ -1751,6 +1769,17 @@ function CampaignsModal({ onClose, onStatusChange }) {
             {c.status === 'archived' && (
               <span style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}>{c.sheetName ? ' · ' : ''}Archived</span>
             )}
+          </div>
+        )}
+        {worlds.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.35rem' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>World</span>
+            <select value={c.worldId || ''} onChange={e => handleSetWorld(c.id, e.target.value)}
+              style={{ ...inputStyle, width: 'auto', padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
+              aria-label={`World for ${c.name}`}>
+              <option value="">— None —</option>
+              {worlds.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
           </div>
         )}
       </div>
@@ -1827,6 +1856,18 @@ function CampaignsModal({ onClose, onStatusChange }) {
                   <option value="">— Any system —</option>
                   {sheets.map(s => <option key={s.sheetId} value={s.sheetId}>{s.name}</option>)}
                 </select>
+              </div>
+            )}
+            {worlds.length > 0 && (
+              <div>
+                <label style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-dim)', display: 'block', marginBottom: '0.25rem' }}>World (optional)</label>
+                <select value={newWorld} onChange={e => setNewWorld(e.target.value)} style={inputStyle}>
+                  <option value="">— None (standalone) —</option>
+                  {worlds.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', marginTop: '0.3rem', lineHeight: 1.4 }}>
+                  Players who join a world-linked campaign get read access to that world's members list. (Opening the world for players comes later.)
+                </div>
               </div>
             )}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -2093,6 +2134,17 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout,
   const mutatingRef = useRef(false);
 
   const [loadError,     setLoadError]     = useState(null);
+  // §4.8: a non-GM player who's a world MEMBER should still see the Worlds nav.
+  // GET /api/worlds now returns owned + member worlds, so a non-empty result means
+  // "show the nav". GMs always see it regardless.
+  const [hasWorlds,     setHasWorlds]     = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api.getWorlds()
+      .then(wl => { if (alive) setHasWorlds(Array.isArray(wl) && wl.length > 0); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // ── Roster loader — stable callback so the Retry button can re-invoke it ──
   // AbortController + 10s timeout converts a forever-stuck fetch (PWA returning
@@ -2411,7 +2463,7 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout,
       {/* Header */}
       <div style={{ marginBottom: '2rem' }}>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-dim)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>
-          Character Keeper
+          Keep
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
           <h1 style={{ fontSize: '1.8rem', color: 'var(--text-accent)', letterSpacing: '0.05em', lineHeight: 1.1 }}>Characters</h1>
@@ -2422,7 +2474,7 @@ export default function CharacterList({ onSelect, onNew, user, onUser, onLogout,
             <ActionMenu label={user?.username || 'Menu'} items={[
               user?.admin && { label: iconLabel(GearIcon, 'Admin'),       onClick: () => setShowAdmin(true) },
               isGM &&        { label: iconLabel(SwordsIcon, 'Campaigns'),  onClick: () => setShowCampaigns(true) },
-              isGM &&        { label: iconLabel(GlobeIcon, 'Worlds'),      onClick: () => onWorlds?.() },
+              (isGM || hasWorlds) && { label: iconLabel(GlobeIcon, 'Worlds'), onClick: () => onWorlds?.() },
               {                label: iconLabel(PaletteIcon, 'Appearance'), onClick: () => setShowAppearance(true) },
               {                label: iconLabel(SignOutIcon, 'Sign Out'),   onClick: onLogout },
             ]} />

@@ -1,7 +1,13 @@
-// App-chrome themes. Each preset overrides a handful of color variables on
-// :root; everything not listed (text-primary, red, green, fonts, radius…) keeps
-// the index.css defaults, so contrast stays safe across themes. Per-bundle sheet
-// themes (theme.css) are unaffected — this only restyles the app shell.
+// App-chrome themes. Each preset overrides a handful of variables on :root;
+// anything a preset does NOT list falls back to the index.css defaults, so
+// contrast stays safe across themes. Per-bundle sheet themes (theme.css) are
+// unaffected — this only restyles the app shell.
+//
+// Themes may override FONT variables too (--font-display / --font-body /
+// --font-mono), not just colors. The faces themselves are declared once in
+// index.css via @font-face; a theme just points a font variable at one. A face
+// the active theme doesn't reference is never downloaded, so parking several
+// display fonts here is free until one is selected.
 
 export const THEMES = {
   tavern: {
@@ -59,16 +65,16 @@ export const THEMES = {
     },
   },
   parchment: {
-  label: 'Parchment',
-  vars: {
-    '--bg-deep':      '#1a2028', '--bg-surface':  '#232A33', '--bg-raised': '#2d3d4e', '--bg-input': '#232A33', 
-    '--border':       '#c4a87a', '--border-bright':'#c97b2b', 
-    '--accent':       '#c97b2b', '--accent-dim': '#8a5218', '--accent-glow':  'rgba(201,123,43,0.18)', 
-    '--text-accent':  '#a35e18', 
+    label: 'Parchment',
+    vars: {
+      '--bg-deep':      '#1a2028', '--bg-surface':  '#232A33', '--bg-raised': '#2d3d4e', '--bg-input': '#232A33',
+      '--border':       '#c4a87a', '--border-bright':'#c97b2b',
+      '--accent':       '#c97b2b', '--accent-dim': '#8a5218', '--accent-glow':  'rgba(201,123,43,0.18)',
+      '--text-accent':  '#a35e18',
+    },
   },
-},
 
-rose: {
+  rose: {
     label: 'Rose',
     vars: {
       '--bg-deep': '#120a0d', '--bg-surface': '#1c1015', '--bg-raised': '#27161d', '--bg-input': '#311c24',
@@ -77,14 +83,68 @@ rose: {
       '--text-accent': '#e8909e',
     },
   },
-  
+
+  // Neon-noir: near-black blue-violet base, cyan structure, hot-magenta accent.
+  // Glow is pushed high so surfaces bloom. Status tokens go synthetic so even
+  // the lore pills read cyberpunk instead of falling back to the earthy defaults.
+  // Type carries the theme too: Cyberpunks (a decorative display face) on all
+  // headings, Share Tech Mono for body copy so paragraphs read like a terminal
+  // readout. --font-mono already IS Share Tech Mono, so no override needed there.
+  cyberpunk: {
+    label: 'Cyberpunk',
+    vars: {
+      '--bg-deep': '#07060d', '--bg-surface': '#0f0d1a', '--bg-raised': '#171325', '--bg-input': '#1e1830',
+      '--border': '#2a2450', '--border-bright': '#00e5ff',
+      '--accent': '#ff2d95', '--accent-dim': '#b01466', '--accent-glow': 'rgba(0,229,255,0.28)',
+      '--text-accent': '#5cf0ff',
+      '--text-primary': '#e6e2ff', '--text-secondary': '#899adc',
+      '--positive': '#2ee6a0', '--neutral': '#6d6a9a', '--danger': '#ff3b5c',
+      '--font-display': "'Cyberpunks', 'Orbitron', 'Cinzel', serif",
+      '--font-body':    "'Share Tech Mono', monospace",
+    },
+  },
+
+  // Dust-bowl frontier: base is lifted and desaturated toward faded sun-baked
+  // tan-grey (reads BLEACHED where Tavern reads rich), accent is barn-red /
+  // dried clay — nowhere near Tavern's gold. Matte (glow near-zero — Western is
+  // baked, not lit). Status tokens sit in the same dust palette. Rye is the
+  // display face: an Old-West letterpress look that stays legible at the small
+  // heading sizes the display slot also covers (Smokum is too heavy for that —
+  // see the note in the response about reserving it for a hero title).
+  western: {
+    label: 'Western',
+    vars: {
+      '--bg-deep': '#171009', '--bg-surface': '#221a11', '--bg-raised': '#2e241a', '--bg-input': '#372c20',
+      '--border': '#544234', '--border-bright': '#7a6450',
+      '--accent': '#b0492e', '--accent-dim': '#7c301c', '--accent-glow': 'rgba(176,73,46,0.09)',
+      '--text-accent': '#d07a52',
+      '--text-primary': '#ece2cf', '--text-secondary': '#b6a488', '--text-dim': '#8a7860',
+      '--positive': '#8a9556', '--neutral': '#6e5c44', '--danger': '#c04030',
+      '--font-display': "'Rye', 'Cinzel', serif",
+    },
+  },
+
 };
 
+// The union of every custom property ANY theme sets. We clear all of these
+// before applying a preset (below) so switching FROM a rich theme (cyberpunk /
+// western set fonts + extra status tokens) TO a lean one (tavern sets only a
+// few colors) doesn't leave the previous theme's extras stuck as inline styles
+// on <html>. Computed once at module load.
+const ALL_THEME_VARS = [...new Set(
+  Object.values(THEMES).flatMap((t) => Object.keys(t.vars)),
+)];
+
 // Write a preset's variables onto :root. Inline custom-property values on the
-// root element win over the stylesheet :root block. Falls back to 'tavern'.
+// root element win over the stylesheet :root block.
+//
+// Reset-then-apply: first strip every var any theme could have set (so unlisted
+// vars fall back to the index.css defaults), then write this preset's overrides.
+// Falls back to 'tavern' for an unknown key.
 export function applyTheme(key) {
-  const preset = THEMES[key] || THEMES.Tavern;
+  const preset = THEMES[key] || THEMES.tavern;   // lowercase key — 'Tavern' was a no-op
   const root = document.documentElement;
+  for (const name of ALL_THEME_VARS) root.style.removeProperty(name);
   for (const [name, value] of Object.entries(preset.vars)) {
     root.style.setProperty(name, value);
   }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * ActionMenu — a kebab (⋯) overflow menu.
@@ -8,25 +9,40 @@ import React, { useState, useEffect, useRef } from 'react';
  * remain, the menu renders nothing — that's what makes per-viewer / per-character
  * filtering work: a viewer with no permitted actions simply gets no menu.
  *
- * The panel right-aligns to the button and flips upward when it's near the
- * bottom of the viewport, so it never clips off-screen on mobile. Closes on
- * outside-click or Escape.
+ * The dropdown is rendered in a PORTAL to <body> with fixed positioning computed
+ * from the button's rect. That's deliberate: when the menu lives inside a modal
+ * whose body has `overflow: auto` (Campaigns manager, Admin Panel), an
+ * absolutely-positioned dropdown gets clipped by that scroll box and looks like
+ * it opens "behind" the modal. A body-level portal escapes every overflow/
+ * stacking context, so the menu always paints on top. It right-aligns to the
+ * button and flips upward near the bottom of the viewport. Closes on
+ * outside-click, Escape, or any scroll (so it never drifts away from its button).
  */
 export default function ActionMenu({ items, label }) {
   const [open,   setOpen]   = useState(false);
-  const [openUp, setOpenUp] = useState(false);
+  const [coords, setCoords] = useState(null);  // { right, top?, bottom? } in viewport px
   const wrapRef = useRef(null);
   const btnRef  = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
-    const onKey  = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const onDown = (e) => {
+      const inWrap = wrapRef.current && wrapRef.current.contains(e.target);
+      const inMenu = menuRef.current && menuRef.current.contains(e.target);
+      if (!inWrap && !inMenu) setOpen(false);
+    };
+    const onKey    = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const onScroll = () => setOpen(false);   // don't let the menu drift from its button
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);   // capture: catch inner scrollers too
+    window.addEventListener('resize', onScroll);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
     };
   }, [open]);
 
@@ -38,7 +54,13 @@ export default function ActionMenu({ items, label }) {
     if (!open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
       const estHeight = visible.length * 38 + 12;          // rough menu height
-      setOpenUp(rect.bottom + estHeight > window.innerHeight && rect.top > estHeight);
+      const openUp = rect.bottom + estHeight > window.innerHeight && rect.top > estHeight;
+      setCoords({
+        right: Math.max(8, window.innerWidth - rect.right),
+        ...(openUp
+          ? { bottom: window.innerHeight - rect.top + 4 }
+          : { top: rect.bottom + 4 }),
+      });
     }
     setOpen(o => !o);
   };
@@ -75,11 +97,11 @@ export default function ActionMenu({ items, label }) {
         </button>
       )}
 
-      {open && (
-        <div role="menu" onClick={e => e.stopPropagation()} style={{
-          position: 'absolute',
-          right: 0,
-          ...(openUp ? { bottom: '100%', marginBottom: '0.25rem' } : { top: '100%', marginTop: '0.25rem' }),
+      {open && coords && createPortal(
+        <div ref={menuRef} role="menu" onClick={e => e.stopPropagation()} style={{
+          position: 'fixed',
+          right: coords.right,
+          ...(coords.top != null ? { top: coords.top } : { bottom: coords.bottom }),
           minWidth: '150px',
           background: 'var(--bg-raised)',
           border: '1px solid var(--border)',
@@ -88,7 +110,9 @@ export default function ActionMenu({ items, label }) {
           padding: '0.25rem',
           display: 'flex',
           flexDirection: 'column',
-          zIndex: 200,
+          // Above modal overlays (which top out around 1200) so it never hides
+          // behind the dialog it was opened from.
+          zIndex: 3000,
         }}>
           {visible.map((it, i) => (
             <button key={i} type="button" role="menuitem"
@@ -105,7 +129,8 @@ export default function ActionMenu({ items, label }) {
               {it.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

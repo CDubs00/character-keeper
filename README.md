@@ -1,4 +1,4 @@
-# Character Keeper
+# Keep
 
 ![icon](<frontend/public/icon-512.png>)
 
@@ -13,7 +13,7 @@ Ships with sheets for **Savage Pathfinder**, **Dungeons & Dragons 5e**, **Risus:
 ## A note up front: this was built with a lot of AI help
 
 I should be honest about how this got made. I'm not a web developer, my
-limited background is VB.NET and SQL, and I learn by copying something that works and tweaking it until I understand it. Pretty much all of Character Keeper was built in long back-and-forth sessions with Claude (Anthropic's AI), with me steering the design and asking "okay, but *why* does that work" until it stuck.
+limited background is VB.NET and SQL, and I learn by copying something that works and tweaking it until I understand it. Pretty much all of Keep was built in long back-and-forth sessions with Claude (Anthropic's AI), with me steering the design and asking "okay, but *why* does that work" until it stuck.
 
 So if you read the code and find a comment that explains things a little too
 thoroughly, or an architecture that's more carefully reasoned than a first time web project has any right to be, that's the collaboration showing. I'm putting this in the README because I think it's the honest thing to do, and because it might be encouraging to other hobbyists: you can build something real this way, as long as you stay in the driver's seat and actually learn the thing rather than just pasting whatever comes out.
@@ -26,7 +26,8 @@ Just know the design decisions are mine.
     - **HTML-template sheets.** A bundle's layout is plain HTML wired to live data through `data-*` attributes. A single recursive renderer reads those attributes and binds them to state, so there's no custom React component per game.
     - Here is a place to share: [Character Sheet Bundles](https://github.com/CDubs00/character-keeper/discussions/15)
 - **Roles and visibility.** Every account is some mix of `admin` / `gm` / `player`. Players see their own characters. GMs see characters tagged to campaigns they run. Admins see the user list and settings.
-- **Campaigns with join codes.** A GM makes a campaign and gets a short human code. Players opt in by tagging their own character to that code — nobody gets pulled into a campaign without their say-so. Once added, the GM of that campaign has read access to that character. all characters part of that campaign are grouped. 
+- **Campaigns with join codes.** A GM makes a campaign and gets a short human code. Players opt in by tagging their own character to that code — nobody gets pulled into a campaign without their say-so. Once added, the GM of that campaign has read access to that character, and all characters part of that campaign are grouped. If the campaign is linked to a **world**, joining it also opens that world to the player (see [Worlds](#worlds-the-keep-module)).
+- **Worlds — a GM world-building surface ("Keep").** A GM-owned space for building and tracking worlds: lore, locations, NPCs, factions, deities, an in-world calendar with an events timeline, and more, laid out as a three-panel wiki. It reuses the same auth, theming, storage-as-plain-JSON, and drop-in-folder philosophy as the character side. Worlds link to campaigns, so **joining a GM's campaign opens their world to the player** at a read (or higher) tier. Still growing (system-specific reference content — spells, stat blocks — comes later), but world/lore authoring, player read access, and the calendar are real and usable today. See [Worlds (the "Keep" module)](#worlds-the-keep-module) below.
 - **Share links.** Generate a public read or read/write link for a single
   character, with an experation you pick. No login needed to open it. Editable links autosave just like the real sheet.
 - **Global search.** Search across every character you can see — including their session notes, from one box. It respects the same visibility rules as the roster, so it never surfaces a sheet you aren't allowed to open. Searchable fields within the sheets are dicated by the Bundles author. 
@@ -36,7 +37,7 @@ Just know the design decisions are mine.
 - **File attachments.** Keep handouts, backstory PDFs, a loot spreadsheet, or a map alongside a character. Markdown files visualize using *GitHub Flavored Markdown (GFM)*. If the attachment is a .txt or .md file users can edit dirently in app. This feature is off by default; an admin turns it on in the admin panel. There's real security work behind this one.
 - **Export.** Download a character as a file. If it's just the sheet you get raw JSON, a image of each tab, a selfcontained HTML file and session notes, if any, are exported as markdown. If it has a portrait or attachments you get a tidy ZIP with everything, attachments restored to their real filenames.
 - **Archive and life-status.** Characters can be `active`, `inactive`, `deceased`, `retired`, `shelved`, or `archived`. Any character that is not `active` drop into collapsible sections instead of cluttering the roster, you can change status or restore anytime.
-- **Admin panel.** Create users, toggle roles, reset passwords, delete accounts, see user session logins and set app-wide settings (default theme, whether external links are allowed in sheets, whether attachments are active).
+- **Admin panel.** Create users, toggle roles, reset passwords, delete accounts, see user session logins and set app-wide settings (default theme, whether external links are allowed in sheets **and worlds**, whether attachments are active).
 - **Themes.** Seven app themes — Tavern, Arcane, Verdant, Ember, Frost, In The Grey and Rose. Each user can pick their own; the admin sets the default for shared pages and new accounts. A bundle's own sheet styling is separate from this.
 - **Installable (PWA).** Manifest and icons, so it can live as an app on your phone or desktop.
 
@@ -80,6 +81,45 @@ Typed notation now triggers physics dice plus full modifier math. Live in the Ro
 | Fate | `dF` | Fudge dice (-1, 0, +1) |
 | Multi-roll | `/` | Roll segments independently with separate totals (e.g. `1d6x/1d6x`) |
 
+## Worlds (the "Keep" module)
+
+Keep started out purely **character-centric** — you own characters, rendered from system bundles. **Worlds** ("Keep") adds a **world-centric** surface on top: a place for GMs to build and track worlds and their lore. It's a module *inside* Keep, not a separate app, and it follows the same rules as everything else — plain JSON on disk, owner-only visibility, theme variables, and content that drops in rather than being coded in.
+
+A GM **owns** their worlds and does all the authoring; an admin doesn't get to peek into another GM's world. Players get in a different way — by **joining a campaign** (see below), which opens the linked world to them read-only.
+
+### Campaigns, worlds, and how a player gets in
+
+Worlds and campaigns are linked, and that link is how the world stops being GM-only:
+
+- **A campaign can belong to a world.** When a GM creates or edits a campaign, they can point it at one of their own worlds (or leave it standalone). One world can have many campaigns.
+- **Joining a campaign opens its world.** A player tags their character to a campaign with its 6-character join code (the same opt-in flow the character side already uses). If that campaign belongs to a world, the player's *account* is added to that world's access ledger at the **read** tier — automatically. Access is keyed to the user, not the character, and it sticks around even if they later leave the campaign.
+- **Four access tiers, set by the GM.** From the world's **Access & members** settings the GM promotes a member from **read** → **propose** → **write**:
+  - **read** — browse the world (fog stripped, hidden/over-tier entries invisible).
+  - **propose** — additionally suggest edits that queue for the GM to approve or reject; nothing is applied until the GM says so.
+  - **write** — a trusted co-author who edits entries directly (with full version history), but still can't delete entries, manage members, or change world settings.
+  - The GM can also **revoke** a user (which cascades their characters out of the world's campaigns) or **kick** a single character from a campaign without touching that user's world access.
+- **The server is the only gate.** Everything a member is allowed to see is decided server-side and sent already filtered and already fog-stripped — the client never hides anything it was trusted with. Fog, hidden entries, and over-tier content simply never leave the server for a member who shouldn't have them.
+
+- **A landing "home" page.** Opening a world lands on a GM-authored home page — free-form Markdown (with fog, wiki links, and uploaded images) that sets the scene before you dive into the lore, rather than dumping you into the first category. It's the "Home" item at the top of the rail; on a phone it's the top of the drill-down. Edit it in place; images upload to the world's own asset store.
+- **Three-panel lore wiki.** Beyond Home you get a category rail (left), an entry list (middle), and a reader/editor (right). On a phone it collapses to a drill-down — you land on the home page and tap *into* depth (home → categories → entries → entry), with a back chevron, a hamburger drawer, and right-swipe-back. It's built to run a game from your phone.
+- **Rename or hide categories per world.** One GM's "Deities" is another's "Powers," and a third hides "Events" entirely — a "Customize categories" panel does both, per world. It's display-only: the underlying category never changes id, so every entry and every `[[wiki link]]` keeps resolving, and the shared pack is never touched.
+- **Search the whole world.** The search box at the top of the rail spans every category at once — matching an entry's name, subtitle, or any field text — not just the one you're looking at. Results show the entry, its category (with your rename), and a matched snippet, and mark anything hidden; click to jump straight there. Even entries in hidden categories turn up, so you can always reach what you authored.
+- **Lore categories come from "packs," not code.** Just like sheets are bundles, lore categories are **packs** — a drop-in folder that declares categories (Locations, NPCs, Factions, Deities, Events, Organizations by default) and the fields each one carries. New categories = new pack, not a new release. The loader is defensive: a broken pack falls back to a sane default set instead of leaving a world empty.
+- **Markdown authoring, the plain-text way.** Entry bodies are written in clean **Markdown** (GitHub-flavored) with a formatting bar that *inserts* the syntax — no rich-text/WYSIWYG surprises, the literal `**bold**` stays visible and editable. Bodies are always rendered as safe React nodes, never raw HTML.
+- **Fog (GM-only spoilers).** Wrap text in `||double pipes||` and it renders as a "GM only" chip. Your hidden lore is visible to you at the table, but it's stripped server-side before it ever reaches a player — a read or propose member never receives the fogged text at all, and neither does anyone below the tier the GM set on the entry. (Whole entries can also be marked hidden to keep them owner-only.)
+- **In-world calendar + events timeline.** A pack can declare a fictional calendar — its own months, days, eras, and epoch — and the world can then keep time in it. An "Events" category gets structured in-world dates (validated on save against the calendar), and a **Timeline** view lays those events out in chronological order with the gap between them, respecting the same visibility rules so a player only sees the events they're allowed to. In-world fictional time and real-world session dates stay separate — the calendar describes fiction only.
+- **Wiki links.** Type `[[Waterdeep]]` (or `[[Waterdeep|the City of Splendors]]`) to link to another entry *by name*, across every category. Links resolve at render time — no stored link table to keep in sync. A live `[[`-autosuggest offers existing entry names (match-only). A dangling link renders in a visible "broken" style rather than silently, and a **world-level Broken-links report** lists every unresolved reference with clickable jumps to fix them.
+- **Inline images + attachments.** Upload images straight into an entry's body and drop them in with one button, or keep a list of downloadable files (handouts, maps) on the entry — same "store inert, serve guarded" security model and file-type allowlist as character attachments, served app-origin only. Inline images can be **resized and left/center/right aligned** (with text wrapping around them), and can even be tucked inside fog.
+- **Version history.** Every edit snapshots the previous state to a sidecar. A quiet clock icon opens a timeline you can preview and **restore** from — and a restore is itself undoable (it snapshots the current state first).
+- **World backdrops.** Give a world a background image; the app mutes it automatically (a themed scrim + frosted-glass panels) so text is always readable — there's no opacity knob to fiddle with. It shows behind the wiki and as a faint banner on each world card.
+- **External-link policy.** Worlds obey the same admin "Allow external links" setting as sheets: when it's off, off-origin links become plain text and the link button disappears from the format bar.
+
+**Planned — System Packages (reference content).** Lore is deliberately *system-agnostic*: a tavern is a tavern in any ruleset. The next major layer is **system-stamped reference content** — spells, classes, species, creatures, stat blocks — whose field *shape* comes from a game bundle and carries a `systemId` stamp. A world will point at a primary system, entries authored under an older ruleset stay usable while you convert them over time (shown with a system badge until they match), and NPCs/deities will be able to *reference* those stamped stat blocks inline without becoming system-locked themselves. None of this is built yet — it's flagged here so you know where Worlds is heading. The `[[wiki links]]` you write today will resolve to reference entries automatically once that tier exists.
+
+**Sessions** — a per-campaign session log tied to the world — are also planned; today session notes live per-character on the character side.
+
+Worlds are **under active development**, but the core is real and in daily use: world + lore authoring, campaign↔world linkage, tiered player access, fog, the calendar/timeline, and customizable categories all work today.
+
 ## Quick start
 
 ```bash
@@ -121,6 +161,8 @@ Passwords have to be at least 10 characters. I followed the modern advice
 | `/login`             | public      | Login                                    |
 | `/characters`        | required    | Roster                                   |
 | `/characters/:id`    | required    | Character sheet                          |
+| `/worlds`            | GM/admin    | Worlds list (the "Keep" module)          |
+| `/worlds/:id`        | GM/admin    | World lore wiki (owner-only)             |
 | `/share/:token`      | public      | Public share view (view or edit)         |
 
 ¹ `/setup` only works while zero users exist; after that it redirects.
@@ -169,10 +211,18 @@ volumes:
 data/
   users.json            accounts and hashed passwords
   campaigns.json        shared campaign list
+  worlds.json           GM worlds (the "Keep" module), owner-tagged
   settings.json         app settings (default theme, link policy, attachments)
   sheets-registry.json  generated bundle registry
   characters/<user>/    one JSON per character, plus its portrait, session notes,
                         roll log, and any attachments — all named after the character id
+  lore/<worldId>/       one JSON per lore entry, plus its history sidecar and any
+                        uploaded images/attachments — all named after the entry id
+  packs/<packId>/       lore-category packs (seeded from the image on first run,
+                        never overwritten — same as bundles)
+  world-assets/         per-world backdrop images (flat <worldId>.backdrop.<ext>),
+                        plus a <worldId>/ subdir per world for landing-page images
+                        and attachments (asset.<key>.<ext> + assets.json manifest)
 
 bundles/
   <bundle>/             installed game-system bundles
@@ -249,7 +299,7 @@ See [SECURITY.md](SECURITY.md) for the reporting process and security model.
 
 ## Security & Disclaimer
 
-Character Keeper is **free software, provided "as is", without warranty of any kind.** See [LICENSE](LICENSE) (GNU AGPL v3) for the full terms, including the warranty disclaimer (§15) and limitation of liability (§16). The authors and contributors are **not liable** for any damages, data loss, or security incidents arising from its use, misuse, or deployment.
+Keep is **free software, provided "as is", without warranty of any kind.** See [LICENSE](LICENSE) (GNU AGPL v3) for the full terms, including the warranty disclaimer (§15) and limitation of liability (§16). The authors and contributors are **not liable** for any damages, data loss, or security incidents arising from its use, misuse, or deployment.
 
 It is designed to be **self-hosted for a trusted group**, not run as a public service for untrusted or anonymous users. You are responsible for securing your own deployment. In particular:
 

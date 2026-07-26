@@ -51,7 +51,7 @@ export default function Setup({ onSetup }) {
             textTransform: 'uppercase',
             marginBottom: '0.4rem',
           }}>
-            Character Keeper
+            Keep
           </div>
           <h1 style={{ fontSize: '1.5rem', color: 'var(--text-accent)', letterSpacing: '0.08em' }}>
             First-Run Setup

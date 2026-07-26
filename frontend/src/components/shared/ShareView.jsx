@@ -63,7 +63,7 @@ export default function ShareView() {
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5rem 1rem 4rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-          Character Keeper — {permission === 'edit' ? 'Shared (Editable)' : 'Shared (View Only)'}
+          Keep — {permission === 'edit' ? 'Shared (Editable)' : 'Shared (View Only)'}
         </div>
         {permission === 'edit' && (
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--accent)' }}>
