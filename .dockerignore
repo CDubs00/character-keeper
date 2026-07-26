@@ -6,3 +6,6 @@ data
 backend/data
 cookies*.txt
 .env
+CLAUDE.md
+*_test.js
+*.test.js

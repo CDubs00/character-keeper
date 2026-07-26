@@ -142,7 +142,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
-# ---- Character Keeper ----
+# ---- Keep ----
 # Runtime data: users, characters, campaigns, settings, generated registry.
 # Keep data/sheets — those bundles are app source.
 /data/*
@@ -152,3 +152,6 @@ frontend/build/
 # macOS
 .DS_Store
 
+*_test.js
+*.test.js
+/CLAUDE.md

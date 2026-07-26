@@ -8,18 +8,58 @@ const bcrypt    = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 const helmet    = require('helmet');
 const sheets    = require('./sheets');
+const packs     = require('./packs');
 const { loadSchema } = sheets;
 const { validateUsername } = require('./validateUsername');
+const { passwordError } = require('./validatePassword');
+// isGM is aliased to isWorldGM: two route handlers below declare a local
+// `const isGM` for the SITE-level GM flag (req.session.user.gm), which is a
+// different concept from a WORLD role. Aliasing keeps them from shadowing.
+const {
+  canSee, seesRawFog, stripFog, serializeEntryForRole,
+  isGM: isWorldGM,
+  VISIBILITY_STATES, DEFAULT_VISIBILITY,
+  migrateRole, migrateVisibility,
+  CAMPAIGN_STATUSES, CAMPAIGN_TEXT_FIELDS, serializeCampaignForRole,
+  SESSION_SCENE_FIELDS, SESSION_RECORD_FIELDS, SESSION_VISIBILITY,
+  DEFAULT_SESSION_VISIBILITY, serializeSessionForRole, serializeSessionsForRole,
+  sessionStatsForRole,
+} = require('./loreAccess');
+const calendarMath = require('./calendarMath');
+const createFileSessionStore = require('./sessionStore');
 const pkg = require('./package.json');
 const { zipSync } = require('fflate');
 
 const app      = express();
 const PORT     = process.env.PORT     || 3001;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
+
+// bcrypt work factor. Kept as a single named constant so every hashing site uses
+// the same cost and it can't drift. 12 follows current OWASP guidance (each +1
+// doubles an offline cracker's work if users.json ever leaks). Existing hashes at
+// an older cost keep verifying — the cost is embedded in each stored hash — and
+// upgrade opportunistically on the next password change.
+const BCRYPT_COST = 12;
+// Number of reverse-proxy hops in front of the app (see app.set('trust proxy')).
+// Cloudflare(orange) + Nginx Proxy Manager = 2, which is the default. An admin
+// deploying Keep behind ONLY NPM (or directly) should set TRUST_PROXY_HOPS=1.
+// Setting this HIGHER than the real hop count lets a client forge X-Forwarded-For
+// and spoof its IP, defeating the login rate limiter — so keep it exact.
+const TRUST_PROXY_HOPS = Number(process.env.TRUST_PROXY_HOPS) || 2;
+
+// Absolute session lifetime. The 7-day cookie maxAge slides on activity, so an
+// active session could otherwise live forever. This hard ceiling (stamped at
+// login, enforced in requireAuth) forces a re-login after 30 days no matter how
+// active the session is — bounding the value of a stolen cookie.
+const MAX_SESSION_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const USERS_FILE      = path.join(DATA_DIR, 'users.json');
 const CAMPAIGNS_FILE  = path.join(DATA_DIR, 'campaigns.json');
 const CHARS_DIR       = path.join(DATA_DIR, 'characters');  // ← new
 const LOGS_FILE       = path.join(DATA_DIR, 'logs.json');
+const WORLDS_FILE     = path.join(DATA_DIR, 'worlds.json');   // Keep: flat world list
+const LORE_DIR        = path.join(DATA_DIR, 'lore');          // Keep: one file per lore entry
+const WORLD_ASSETS_DIR= path.join(DATA_DIR, 'world-assets');  // Keep: per-world backdrop images
 
 
 
@@ -27,7 +67,7 @@ const LOGS_FILE       = path.join(DATA_DIR, 'logs.json');
 
 // App/config files that must never be treated as character data, even if they
 // somehow land inside the characters tree (e.g. a misconfigured volume).
-const RESERVED_JSON = new Set(['settings.json', 'users.json', 'campaigns.json', 'sheets-registry.json', 'logs.json']);
+const RESERVED_JSON = new Set(['settings.json', 'users.json', 'campaigns.json', 'sheets-registry.json', 'logs.json', 'worlds.json']);
 
 // ---------------------------------------------------------------------------
 // Attachments
@@ -94,6 +134,25 @@ function sniffMagic(ext, buf) {
     case 'md':
     case 'csv':  return true; // inert text — nothing to verify
     default:     return false;
+  }
+}
+
+// Post-write magic-byte check for the two disk-storage image uploads (character
+// portrait, world backdrop). The attachment and lore-asset uploads use multer
+// memoryStorage and sniff the in-memory buffer BEFORE writing; these two use
+// diskStorage (multer writes the file first), so we read the leading bytes back
+// off disk and reject-and-unlink if they don't match the claimed extension. The
+// GUARANTEE is identical — a renamed `evil.exe → map.png` never survives — just
+// reached a step later. Returns true when the file is a genuine image.
+function verifyImageFile(filePath, ext) {
+  try {
+    const fd   = fs.openSync(filePath, 'r');
+    const head = Buffer.alloc(12);
+    fs.readSync(fd, head, 0, 12, 0);
+    fs.closeSync(fd);
+    return sniffMagic(ext, head);
+  } catch {
+    return false;
   }
 }
 
@@ -164,7 +223,7 @@ function seedInitialAdmin() {
     if (users.find(u => u.username === username)) return;  // already created
     users.push({
       username,
-      password:     bcrypt.hashSync(password, 10),
+      password:     bcrypt.hashSync(password, BCRYPT_COST),
       admin:        true,
       gm:           false,
       player:       false,
@@ -191,8 +250,742 @@ function saveCampaigns(campaigns) {
   fs.writeFileSync(CAMPAIGNS_FILE, JSON.stringify(campaigns, null, 2));
 }
 
+// ---------------------------------------------------------------------------
+// Campaign↔World link + world access ledger (§4.7) — GM-side plumbing only.
+// A campaign MAY belong to one world owned by the SAME GM (campaign.worldId), or
+// be standalone (null). A world's access is a per-USER ledger on the world record
+// (world.members). Joining a campaign-in-a-world auto-grants the character owner
+// `read`; the GM manages tiers from there. NO player read surface here — that's
+// §4.8; a `read` member still can't open a world yet.
+// ---------------------------------------------------------------------------
+
+// The three access tiers, ascending. `read` is the auto-grant floor. `coGM` is
+// GM-equivalent for CONTENT (hidden entries, raw fog, direct edits, approvals) but
+// holds NO structural power — members, pack, delete and transfer stay with the
+// owner via requireWorldOwner, so a coGM can never lock the owner out.
+const MEMBER_TIERS = ['read', 'propose', 'coGM'];
+
+// Validate a campaign's requested worldId against the caller. Returns:
+//   null      — standalone (no/blank world) — a valid choice
+//   <string>  — a world that exists AND is owned by this user
+//   undefined — invalid (malformed, missing, or someone else's world) → 400
+// Same-GM ownership is the rule: a campaign can only nest under a world you own.
+function resolveOwnedWorldId(worldId, username) {
+  if (worldId == null || worldId === '') return null;
+  if (typeof worldId !== 'string' || !safeId(worldId)) return undefined;
+  const w = getWorlds().find(x => x.id === worldId);
+  if (!w || w.ownedBy !== username) return undefined;
+  return worldId;
+}
+
+// The campaigns that belong to a world (same-GM link). Used to derive which of a
+// user's characters count as "in this world" and to scope revoke/kick cascades.
+// Resolve a viewer's role on ONE campaign. Returns 'owner', 'player', or null.
+//
+// Membership is DERIVED, never a ledger: a user is a player iff they own a
+// character whose campaignId matches this campaign's id or join code — exactly
+// the rule join-by-code already uses (matchesCampaign). Consequences worth
+// stating, because both are easy to get wrong later:
+//   • World membership does NOT grant campaign access. A world ledger member with
+//     no character here is a stranger.
+//   • Admin does NOT grant access either, matching GET /api/campaigns ("Admin role
+//     does not grant visibility into other GMs' campaigns").
+// A null return must produce a 404, never a 403 — a stranger should not learn
+// that a campaign id exists. Mirrors requireWorldRead.
+function resolveCampaignRole(campaign, username) {
+  if (!campaign || !username) return null;
+  if (campaign.ownedBy === username) return 'owner';
+  const keys = campaignKeySet([campaign]);
+  for (const { id, filePath } of userCharacterFiles(username)) {
+    let char;
+    try { char = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { continue; }
+    if (matchesCampaign(char.campaignId, keys)) return 'player';
+  }
+  return null;
+}
+
+// The campaign roster: every character tagged with this campaign, with its owning
+// username. ONE scan of all character files, mirroring GET /api/worlds/:id/campaigns.
+// Derived at read and never persisted — a stored roster drifts the moment someone
+// joins, leaves, or renames, the same reason autosave re-reads `shares` from disk.
+// serializeCampaignForRole strips the `owner` field for non-GMs.
+function campaignRoster(campaign) {
+  const keys = campaignKeySet([campaign]);
+  const out  = [];
+  for (const filePath of findAllCharFiles()) {
+    let char;
+    try { char = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { continue; }
+    if (!matchesCampaign(char.campaignId, keys)) continue;
+    out.push({
+      id:    char.id || null,
+      name:  char.info?.name || 'Unnamed',
+      owner: path.relative(CHARS_DIR, filePath).split(path.sep)[0],   // dir = username
+    });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+
+// ---------------------------------------------------------------------------
+// Session sidecars (Wave B)
+//
+// One file per campaign at data/campaigns/<id>.sessions.json — a SIDECAR, never
+// inside campaigns.json. That file is read whole on every join-by-code lookup and
+// every roster scan; folding a campaign's whole play log into it would put
+// thousands of lines of prose on that hot path. Same reasoning as the character
+// `${id}.sessions.json` sidecar.
+//
+// data/campaigns.json (the registry) and data/campaigns/ (the sidecars) coexist —
+// a flat list beside a directory, exactly like worlds.json beside lore/.
+// ---------------------------------------------------------------------------
+
+const CAMPAIGN_SIDECAR_DIR = path.join(DATA_DIR, 'campaigns');
+
+function sessionsPath(campaignId) {
+  return path.join(CAMPAIGN_SIDECAR_DIR, `${campaignId}.sessions.json`);
+}
+
+// Tolerant of a missing or corrupt sidecar — log and fall back to empty, never
+// crash the campaign load. Same discipline as the lore history sidecar.
+function readSessions(campaignId) {
+  const file = sessionsPath(campaignId);
+  if (!fs.existsSync(file)) return [];
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(raw) ? raw : [];
+  } catch (e) {
+    console.warn(`[sessions] ${campaignId}.sessions.json is unreadable (${e.message}) — treating as empty`);
+    return [];
+  }
+}
+
+function writeSessions(campaignId, sessions) {
+  fs.mkdirSync(CAMPAIGN_SIDECAR_DIR, { recursive: true });
+  fs.writeFileSync(sessionsPath(campaignId), JSON.stringify(sessions, null, 2));
+}
+
+// ---------------------------------------------------------------------------
+// Session attachments — reuses the lore-asset security model VERBATIM (extension
+// allowlist, magic-byte sniff, server-token filenames, pinned Content-Type +
+// nosniff, size/count caps): "store inert, serve guarded" per SECURITY.public.md.
+// Files live beside the session sidecar in CAMPAIGN_SIDECAR_DIR, keyed by
+// campaign + session so a delete of either can sweep them; the extra-dot stem
+// (`.session-<id>.assets.json` / `.session-<id>.asset.<key>.<ext>`) keeps them
+// out of any future generic scan of that directory, same discipline as the lore
+// entry/history/assets split.
+//
+// Each asset carries its OWN `visibility` ('hidden' | 'shared', same vocabulary
+// as the session record) — a GM can attach a secret map (hidden) and a handout
+// (shared) to the same session. A shared asset is only actually reachable by a
+// player when the SESSION ITSELF is shared too (canSeeSession) — an attachment
+// on a hidden session must not leak just because someone guesses its key.
+// ---------------------------------------------------------------------------
+const SESSION_ASSET_MAX_PER_SESSION = Number(process.env.SESSION_ASSET_MAX_PER_SESSION) || 50;
+
+function sessionAssetsManifestPath(campaignId, sessionId) {
+  return path.join(CAMPAIGN_SIDECAR_DIR, `${campaignId}.session-${sessionId}.assets.json`);
+}
+function sessionAssetBlobPath(campaignId, sessionId, key, ext) {
+  return path.join(CAMPAIGN_SIDECAR_DIR, `${campaignId}.session-${sessionId}.asset.${key}.${ext}`);
+}
+function readSessionAssets(campaignId, sessionId) {
+  const p = sessionAssetsManifestPath(campaignId, sessionId);
+  if (!fs.existsSync(p)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error(`[sessions] Failed to parse assets ${p}: ${e.message}`);
+    return [];
+  }
+}
+function writeSessionAssets(campaignId, sessionId, list) {
+  fs.mkdirSync(CAMPAIGN_SIDECAR_DIR, { recursive: true });
+  fs.writeFileSync(sessionAssetsManifestPath(campaignId, sessionId), JSON.stringify(list, null, 2));
+}
+// Best-effort removal of one session's asset blobs + manifest (called when that
+// session is deleted, or when the whole log is dropped alongside a campaign).
+function removeSessionAssets(campaignId, sessionId) {
+  for (const a of readSessionAssets(campaignId, sessionId)) {
+    const p = sessionAssetBlobPath(campaignId, sessionId, a.key, a.ext);
+    if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch { /* best-effort */ } }
+  }
+  const m = sessionAssetsManifestPath(campaignId, sessionId);
+  if (fs.existsSync(m)) { try { fs.unlinkSync(m); } catch { /* best-effort */ } }
+}
+const sessionAssetUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: ATTACH_MAX_BYTES, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).slice(1).toLowerCase();
+    cb(null, ATTACH_EXTS.has(ext)); // drop disallowed extensions before buffering
+  },
+});
+
+// The calendar a campaign's in-world dates are validated against: its world's if
+// it has one, else the built-in. A campaign may be standalone (worldId null), and
+// since resolveWorldCalendar never returns null there is always something to
+// validate against — so standalone campaigns get dates too rather than a special case.
+function campaignCalendar(campaign) {
+  if (campaign && campaign.worldId) {
+    const world = getWorlds().find(w => w.id === campaign.worldId);
+    if (world) return resolveWorldCalendar(world);
+  }
+  return BUILTIN_CALENDAR;
+}
+
+const SESSION_TEXT_CAP = 8000;
+const SESSION_LIST_CAP = 200;
+
+// Build a stored session from a client body. An ALLOWLIST, never a spread: the
+// envelope (id, number, createdAt) is app-owned, and a client must not be able to
+// set it through here. `existing` is the current record on a PUT, so an absent key
+// means "leave alone" rather than "clear".
+function sessionFromBody(body, existing, calendar) {
+  const b   = body || {};
+  const cur = existing || {};
+  const str = (v, fallback) => (typeof v === 'string' ? v.slice(0, SESSION_TEXT_CAP) : fallback);
+
+  const group = (key, fields) => {
+    const out = {};
+    const inc = b[key] && typeof b[key] === 'object' && !Array.isArray(b[key]) ? b[key] : null;
+    for (const f of fields) {
+      out[f] = inc && typeof inc[f] === 'string'
+        ? inc[f].slice(0, SESSION_TEXT_CAP)
+        : str((cur[key] || {})[f], '');
+    }
+    return out;
+  };
+
+  // In-world dates are GM-set ONLY — never inferred from the real-world date,
+  // never auto-filled, never back-filled by a migration. An invalid one is
+  // rejected outright rather than silently dropped, so a GM notices a typo.
+  let inWorldDate = cur.inWorldDate || null;
+  if ('inWorldDate' in b) {
+    if (b.inWorldDate == null) inWorldDate = null;
+    else {
+      const v = calendarMath.validateDate(calendar, b.inWorldDate);
+      if (!v.ok) return { error: `In-world date: ${v.error}` };
+      inWorldDate = v.value;
+    }
+  }
+
+  let date = cur.date || null;
+  if ('date' in b) {
+    if (b.date == null || b.date === '') date = null;
+    else if (typeof b.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.date)) date = b.date;
+    else return { error: 'Date must look like 2026-02-14.' };
+  }
+
+  const ids = key => (Array.isArray(b[key])
+    ? b[key].filter(x => safeId(x)).slice(0, SESSION_LIST_CAP)
+    : (Array.isArray(cur[key]) ? cur[key] : []));
+
+  const encounters = Array.isArray(b.encounters)
+    ? b.encounters.slice(0, SESSION_LIST_CAP).map(e => ({
+        name:   typeof (e && e.name) === 'string' ? e.name.slice(0, 200) : '',
+        notes:  typeof (e && e.notes) === 'string' ? e.notes.slice(0, SESSION_TEXT_CAP) : '',
+        status: (e && e.status) === 'run' ? 'run' : 'ready',
+      }))
+    : (Array.isArray(cur.encounters) ? cur.encounters : []);
+
+  // Prep is a list of SCENES (the "Script" template), not a flat who/what/where
+  // block. An incoming array replaces the whole list wholesale — same as
+  // `encounters` — since scenes are reordered/added/removed together from one
+  // form, not patched field-by-field like `prep`/`record` used to be.
+  const scenes = Array.isArray(b.scenes)
+    ? b.scenes.slice(0, SESSION_LIST_CAP).map(sc => {
+        const out = {};
+        for (const f of SESSION_SCENE_FIELDS) {
+          out[f] = typeof (sc && sc[f]) === 'string'
+            ? sc[f].slice(0, f === 'name' ? 200 : SESSION_TEXT_CAP)
+            : '';
+        }
+        return out;
+      })
+    : (Array.isArray(cur.scenes) ? cur.scenes : []);
+
+  return {
+    session: {
+      id:          cur.id,
+      number:      Number.isInteger(cur.number) ? cur.number : 1,
+      title:       typeof b.title === 'string' ? b.title.slice(0, 200) : str(cur.title, ''),
+      date,
+      inWorldDate,
+      visibility:  SESSION_VISIBILITY.includes(b.visibility)
+                     ? b.visibility
+                     : (SESSION_VISIBILITY.includes(cur.visibility) ? cur.visibility : DEFAULT_SESSION_VISIBILITY),
+      scenes,
+      record:      group('record', SESSION_RECORD_FIELDS),
+      nextTime:    typeof b.nextTime === 'string' ? b.nextTime.slice(0, SESSION_TEXT_CAP) : str(cur.nextTime, ''),
+      cast:        ids('cast'),
+      loreRefs:    ids('loreRefs'),
+      encounters,
+      createdAt:   cur.createdAt || new Date().toISOString(),
+      updatedAt:   new Date().toISOString(),
+    },
+  };
+}
+
+// Campaign write access, matching PUT /api/campaigns/:id: the owning GM, or an
+// admin. Reads use resolveCampaignRole instead, which deliberately does NOT grant
+// admin visibility into another GM's campaign.
+function ownsCampaign(campaign, user) {
+  return !!user && (user.admin || campaign.ownedBy === user.username);
+}
+
+function campaignsOfWorld(worldId) {
+  return getCampaigns().filter(c => c.worldId === worldId);
+}
+
+// List ONE user's character records as { id, filePath } — top-level envelopes
+// only (sidecars have an extra-dotted stem and are skipped, like the roster scan),
+// so a cascade only ever touches real characters in that user's own folder.
+function userCharacterFiles(username) {
+  const dir = userCharDir(username);
+  const out = [];
+  if (!fs.existsSync(dir)) return out;
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.json') || RESERVED_JSON.has(name)) continue;
+    const stem = name.slice(0, -5);
+    if (!safeId(stem)) continue;             // skips ${id}.sessions.json etc.
+    out.push({ id: stem, filePath: path.join(dir, name) });
+  }
+  return out;
+}
+
+// Clear the campaign envelope on the characters of `username` whose current
+// campaign is in `keys` (a campaignKeySet). Reads each record from disk and writes
+// it back — never trusts a client body. Returns how many were changed. Shared by
+// the revoke cascade and the GM campaign-kick.
+function clearCampaignForUserChars(username, keys) {
+  let changed = 0;
+  for (const { id, filePath } of userCharacterFiles(username)) {
+    const char = readCharFull({ filePath, username });
+    if (!matchesCampaign(char.campaignId, keys)) continue;
+    char.campaignId   = null;
+    char.campaignCode = null;
+    char.campaignName = null;
+    char.updatedAt    = new Date().toISOString();
+    writeCharSplit(username, id, char);
+    changed++;
+  }
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
+// Keep — Worlds + Lore
+//
+// Worlds live in a flat worlds.json (git-friendly, portable), exactly like
+// campaigns. Lore entries are one-file-per-entry under data/lore/<worldId>/,
+// with a `.history.json` sidecar per entry (snapshots, not diffs). A world is
+// OWNER-ONLY: unlike campaigns, admin does NOT get to peek into another GM's
+// world — the owner check below deliberately omits the admin exemption.
+// ---------------------------------------------------------------------------
+
+function getWorlds() {
+  if (!fs.existsSync(WORLDS_FILE)) return [];
+  try {
+    return JSON.parse(fs.readFileSync(WORLDS_FILE, 'utf8'));
+  } catch (e) {
+    console.error('[worlds] Failed to parse worlds.json:', e.message);
+    return [];
+  }
+}
+
+function saveWorlds(worlds) {
+  fs.writeFileSync(WORLDS_FILE, JSON.stringify(worlds, null, 2));
+}
+
+// Per-world backdrop image path. worldId is validated (safeId) before we get
+// here, so it can't escape WORLD_ASSETS_DIR. Mirrors portraitPath — one asset
+// per world, named `${id}.backdrop.<ext>`.
+function worldBackdropPath(worldId, ext) {
+  return path.join(WORLD_ASSETS_DIR, `${worldId}.backdrop${ext}`);
+}
+
+// A record id the SERVER owns: slug of the name + a short random suffix, kept
+// lowercase so it round-trips safely through case-insensitive filesystems and
+// passes safeId(). Used for both worlds and lore entries.
+function newRecordId(name) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = crypto.randomBytes(5);
+  let rand = '';
+  for (let i = 0; i < 5; i++) rand += chars[bytes[i] % chars.length];
+  const slug = slugify(name);
+  return slug ? `${slug}-${rand}` : rand;
+}
+
+// Owner-only guard for a world. Resolves the world once and stashes it on
+// req.world so the handler doesn't look it up again. Place AFTER validId.
+// NOTE: no admin exemption — a world is visible only to the GM who owns it.
+function requireWorldOwner(req, res, next) {
+  const world = getWorlds().find(w => w.id === req.params.id);
+  if (!world) return res.status(404).json({ error: 'Not found' });
+  if (world.ownedBy !== req.session.user.username) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  req.world = world;
+  next();
+}
+
+// The viewer's ROLE in a world (§4.8): 'owner' if they own it, else their ledger
+// tier ('read'|'propose'|'coGM'), else null (no access). Identity comes from the
+// session, never the body. A member row with a missing/garbage tier fails safe to
+// 'read' (the auto-grant floor) rather than granting anything higher.
+function worldRoleFor(world, username) {
+  if (world.ownedBy === username) return 'owner';
+  const m = world.members && typeof world.members === 'object' ? world.members[username] : null;
+  if (!m) return null;
+  return MEMBER_TIERS.includes(m.tier) ? m.tier : 'read';
+}
+
+// READ guard for a world (§4.8): allow the owner OR any ledger member; otherwise
+// 404 (don't confirm a world exists to someone with no access, matching the
+// campaign style). Stashes req.world + req.worldRole. Place AFTER validId. Used by
+// CONTENT-READ routes only — every management/mutation route keeps requireWorldOwner.
+function requireWorldRead(req, res, next) {
+  const world = getWorlds().find(w => w.id === req.params.id);
+  const role  = world ? worldRoleFor(world, req.session.user.username) : null;
+  if (!world || !role) return res.status(404).json({ error: 'Not found' });
+  req.world     = world;
+  req.worldRole = role;
+  next();
+}
+
+// CONTENT guard: owner or coGM may reach entry create/edit/delete. A stranger
+// 404s (as requireWorldRead); a read/propose member — who CAN see the world —
+// gets 403 (they have access, just not GM status). Everything STRUCTURAL (world
+// delete, categories, members, settings, pack) stays on requireWorldOwner, so a
+// coGM can never lock the owner out. Stashes req.world + req.worldRole.
+function requireWorldWrite(req, res, next) {
+  const world = getWorlds().find(w => w.id === req.params.id);
+  const role  = world ? worldRoleFor(world, req.session.user.username) : null;
+  if (!world || !role) return res.status(404).json({ error: 'Not found' });
+  if (!isWorldGM(role)) return res.status(403).json({ error: 'Forbidden' });
+  req.world     = world;
+  req.worldRole = role;
+  next();
+}
+
+// The world record a NON-OWNER member may receive: strip the `members` ledger
+// (other players' access is not their business) and tag the viewer's role. The
+// owner always gets the full record (with its own role tag) elsewhere.
+function memberWorldView(world, role) {
+  const { members, ...safe } = world;
+  return { ...safe, role };
+}
+
+// The calendar a world actually uses. Resolution order:
+//   1. the world's OWN calendar (`world.calendar`, GM-authored, app-owned)
+//   2. its pack's calendar.json (a TEMPLATE — a starting point, not the authority)
+//   3. null — no calendar, and calendar-date fields degrade to read-only
+//
+// A calendar is LORE, not rules: Harptos is Forgotten Realms, usable under any
+// ruleset. So the WORLD owns it and the pack merely offers one, which is the same
+// relationship categoryConfig has with the pack's category labels.
+//
+// Re-cleaned on every read rather than trusted as stored, so a hand-edited
+// worlds.json can never push an unvalidated shape into the date math. That is
+// cheap (cleanCalendar is pure and the record is capped) and it is a FIXPOINT —
+// cleaning an already-clean calendar returns it unchanged, see worldCalendar_test.
+// The baked-in default, normalized once at boot so it is guaranteed to be in the
+// exact shape the date math expects (and a bad edit to the constant surfaces on
+// startup rather than at request time).
+const BUILTIN_CALENDAR = packs.cleanCalendar(packs.DEFAULT_CALENDAR, 'built-in');
+
+// The calendar a world actually uses. NEVER returns null — every world has one:
+//   1. the world's OWN calendar (`world.calendar`, GM-authored/forked)
+//   2. an explicit "use the built-in, not the pack's" preference
+//   3. the pack's calendar.json (a template a pack author supplies)
+//   4. the baked-in default
+//
+// IMPORTANT: `world.calendarHidden` is NOT consulted here. Hiding the calendar is
+// a DISPLAY choice, and this function feeds sanitizeEntryFields on every lore
+// save — where a null calendar actively NULLS stored calendar-date values. If
+// hiding resolved to null, toggling the calendar off and then editing any entry
+// would silently erase every in-world date in the world. Hiding must stay as
+// non-destructive as hiding a category, which keeps all its entries.
+function resolveWorldCalendar(world) {
+  if (world && world.calendar) {
+    const own = packs.cleanCalendar(world.calendar, `world '${world.id}'`);
+    if (own) return own;                    // fall through if a hand-edit broke it
+  }
+  if (world && world.calendarSource === 'builtin') return BUILTIN_CALENDAR;
+  return packs.loadCalendar(DATA_DIR, world && world.packId) || BUILTIN_CALENDAR;
+}
+
+// Which of the four the world is currently on — drives the settings banner so the
+// GM always knows whether they're looking at their own copy or a template.
+function calendarSourceOf(world) {
+  if (world && world.calendar) return 'own';
+  if (world && world.calendarSource === 'builtin') return 'builtin';
+  return packs.loadCalendar(DATA_DIR, world && world.packId) ? 'pack' : 'builtin';
+}
+
+// Per-world lore directory. worldId is validated (safeId) before we get here.
+function loreDir(worldId) {
+  return path.join(LORE_DIR, worldId);
+}
+function lorePath(worldId, entryId) {
+  return path.join(loreDir(worldId), `${entryId}.json`);
+}
+function loreHistoryPath(worldId, entryId) {
+  return path.join(loreDir(worldId), `${entryId}.history.json`);
+}
+
+function readLoreEntry(worldId, entryId) {
+  const p = lorePath(worldId, entryId);
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (e) {
+    console.error(`[lore] Failed to parse ${p}: ${e.message}`);
+    return null;
+  }
+}
+
+
+// --- one-time migration to the three-role / two-state model ------------------
+//
+// The old model overloaded ONE ordinal scale for both capability and secrecy:
+// member tiers were read|propose|write and entry visibility was
+// hidden|read|propose|write, compared by rank. That coupled "may edit" to "may
+// see", so granting a player edit rights silently handed them every GM secret.
+//
+// Both mappings FAIL CLOSED (see loreAccess.migrateRole / migrateVisibility):
+//   • members: `write` DOWNGRADES to `propose`. Promoting it to coGM would grant
+//     fog clearance over the whole world — the owner re-grants coGM by hand.
+//   • entries: only old `read` becomes `shared`. `propose`/`write` meant MORE
+//     secret than read, so they stay hidden for the owner to re-share deliberately.
+//
+// Runs once at boot, before the first request. Idempotent: already-migrated data
+// maps to itself, so a restart is a no-op and logs nothing. Never throws — a
+// migration crash must not stop the server booting.
+function migrateWorldModel() {
+  let members = 0, entries = 0, worldsTouched = 0;
+
+  try {
+    const worlds = getWorlds();
+    let dirty = false;
+    for (const w of worlds) {
+      if (!w || !w.members || typeof w.members !== 'object') continue;
+      let wDirty = false;
+      for (const [userId, m] of Object.entries(w.members)) {
+        if (!m || typeof m !== 'object') continue;
+        const next = migrateRole(m.tier);
+        if (next !== m.tier) {
+          console.log(`[migrate] world ${w.id}: member ${userId} tier '${m.tier}' -> '${next}'`);
+          m.tier = next;
+          members++; wDirty = true;
+        }
+      }
+      if (wDirty) { dirty = true; worldsTouched++; }
+    }
+    if (dirty) saveWorlds(worlds);
+  } catch (e) {
+    console.error('[migrate] member tiers failed:', e.message);
+  }
+
+  try {
+    if (fs.existsSync(LORE_DIR)) {
+      for (const worldId of fs.readdirSync(LORE_DIR)) {
+        const dir = loreDir(worldId);
+        let stat; try { stat = fs.statSync(dir); } catch { continue; }
+        if (!stat.isDirectory()) continue;
+        for (const file of fs.readdirSync(dir)) {
+          // Entry files only — skip the .history/.proposals/.assets sidecars.
+          if (!file.endsWith('.json')) continue;
+          if (/\.(history|proposals|assets)\.json$/.test(file)) continue;
+          const p = path.join(dir, file);
+          try {
+            const entry = JSON.parse(fs.readFileSync(p, 'utf8'));
+            const next = migrateVisibility(entry.visibility);
+            if (next !== entry.visibility) {
+              console.log(`[migrate] ${worldId}/${file}: visibility '${entry.visibility}' -> '${next}'`);
+              entry.visibility = next;
+              fs.writeFileSync(p, JSON.stringify(entry, null, 2));
+              entries++;
+            }
+          } catch (e) {
+            console.error(`[migrate] skipped ${p}: ${e.message}`);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[migrate] entry visibility failed:', e.message);
+  }
+
+  if (members || entries) {
+    console.log(`[migrate] done: ${members} member tier(s) across ${worldsTouched} world(s), ${entries} entry visibility value(s).`);
+    if (members) console.log('[migrate] NOTE: former `write` members are now `propose`. Re-grant coGM deliberately.');
+  }
+}
+
+// Read the history sidecar (tolerant of a corrupt/absent one — log + fall back,
+// never crash the load, same discipline as character sidecars).
+function readLoreHistory(worldId, entryId) {
+  const p = loreHistoryPath(worldId, entryId);
+  if (!fs.existsSync(p)) return { versions: [] };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(parsed?.versions) ? parsed : { versions: [] };
+  } catch (e) {
+    console.error(`[lore] Failed to parse history ${p}: ${e.message}`);
+    return { versions: [] };
+  }
+}
+
+// Append a snapshot (name + fields + visibility) of an entry's state to its
+// history sidecar. Snapshots, not diffs — entries are small, so there's no
+// reconstruction logic and no eval. Called on every successful PUT/restore.
+function appendLoreHistory(worldId, entry, savedBy, reason) {
+  const history = readLoreHistory(worldId, entry.id);
+  history.versions.push({
+    savedAt: new Date().toISOString(),
+    savedBy,
+    reason,
+    body: {
+      name:       entry.name,
+      fields:     entry.fields || {},
+      visibility: entry.visibility,
+    },
+  });
+  fs.writeFileSync(loreHistoryPath(worldId, entry.id), JSON.stringify(history, null, 2));
+}
+
+// ---------------------------------------------------------------------------
+// Proposals sidecar (§4.9 — propose tier). A per-entry `${entryId}.proposals.json`
+// holding SUGGESTED edits a GM approves/rejects. Same sidecar convention as
+// history (snapshots, not diffs; no DB; git-friendly) and, like history, its extra
+// dot in the stem keeps it OUT of the lore list scan (which matches only plain
+// `${id}.json`). A proposal never mutates the entry — approval does, through the
+// normal update path so history still records the pre-edit snapshot.
+// ---------------------------------------------------------------------------
+function loreProposalsPath(worldId, entryId) {
+  return path.join(loreDir(worldId), `${entryId}.proposals.json`);
+}
+function readLoreProposals(worldId, entryId) {
+  const p = loreProposalsPath(worldId, entryId);
+  if (!fs.existsSync(p)) return { proposals: [] };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(parsed?.proposals) ? parsed : { proposals: [] };
+  } catch (e) {
+    console.error(`[lore] Failed to parse proposals ${p}: ${e.message}`);
+    return { proposals: [] };
+  }
+}
+function writeLoreProposals(worldId, entryId, data) {
+  fs.writeFileSync(loreProposalsPath(worldId, entryId), JSON.stringify(data, null, 2));
+}
+
+// ---------------------------------------------------------------------------
+// Per-entry lore assets — inline images AND downloadable attachments.
+//
+// Same "store inert, serve guarded" model as character attachments (§ up top),
+// keyed to a lore entry instead of a character. Blobs live as flat siblings in
+// the world's lore dir named with a SERVER token — `${entryId}.asset.<key>.<ext>`
+// — and the human name/mime/size/sha live in a manifest sidecar
+// `${entryId}.assets.json`. Both have an extra dot in the stem, so the
+// entry-list scan (which matches only `${id}.json`) skips them, exactly like the
+// history sidecar. Reuses the character ATTACH_* allowlist + magic-byte sniff, so
+// one file-type policy governs every upload surface in the app.
+// ---------------------------------------------------------------------------
+const LORE_ASSET_MAX_PER_ENTRY = Number(process.env.LORE_ASSET_MAX_PER_ENTRY) || 50;
+// Which allowlisted types are actually images (drives the inline-image `isImage`
+// flag the editor uses to decide "insert into body" vs "list as a download").
+const LORE_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif']);
+
+function loreAssetsManifestPath(worldId, entryId) {
+  return path.join(loreDir(worldId), `${entryId}.assets.json`);
+}
+function loreAssetBlobPath(worldId, entryId, key, ext) {
+  return path.join(loreDir(worldId), `${entryId}.asset.${key}.${ext}`);
+}
+
+function readLoreAssets(worldId, entryId) {
+  const p = loreAssetsManifestPath(worldId, entryId);
+  if (!fs.existsSync(p)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error(`[lore] Failed to parse assets ${p}: ${e.message}`);
+    return [];
+  }
+}
+function writeLoreAssets(worldId, entryId, list) {
+  fs.writeFileSync(loreAssetsManifestPath(worldId, entryId), JSON.stringify(list, null, 2));
+}
+// Best-effort removal of an entry's asset blobs + manifest (called on entry
+// delete; world delete rm -rf's the whole lore dir so it's covered there).
+function removeLoreAssets(worldId, entryId) {
+  for (const a of readLoreAssets(worldId, entryId)) {
+    const p = loreAssetBlobPath(worldId, entryId, a.key, a.ext);
+    if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch { /* best-effort */ } }
+  }
+  const m = loreAssetsManifestPath(worldId, entryId);
+  if (fs.existsSync(m)) { try { fs.unlinkSync(m); } catch { /* best-effort */ } }
+}
+
+// ---------------------------------------------------------------------------
+// World-level asset store (§4k landing page)
+//
+// Same "store inert, serve guarded" model as the per-entry lore store (§4g), but
+// keyed by worldId ALONE — the landing page has no entry to hang assets off. The
+// blobs + manifest live in a per-world SUBDIR under WORLD_ASSETS_DIR, so they
+// coexist cleanly with the flat backdrop file `<worldId>.backdrop.<ext>` already
+// there (different dir, different stem). Deliberately NOT a reserved lore entry:
+// a fake entry would leak into the entry-list scan, the rail, and broken-links.
+// ---------------------------------------------------------------------------
+const WORLD_ASSET_MAX = Number(process.env.WORLD_ASSET_MAX) || 50;
+// Length ceiling for a world's landing Markdown (roomy enough for a rich home
+// page, bounded so a runaway body can't bloat worlds.json).
+const LANDING_MAX = Number(process.env.LANDING_MAX) || 20000;
+
+function worldAssetsDir(worldId) {
+  return path.join(WORLD_ASSETS_DIR, worldId);
+}
+function worldAssetsManifestPath(worldId) {
+  return path.join(worldAssetsDir(worldId), 'assets.json');
+}
+function worldAssetBlobPath(worldId, key, ext) {
+  return path.join(worldAssetsDir(worldId), `asset.${key}.${ext}`);
+}
+function readWorldAssets(worldId) {
+  const p = worldAssetsManifestPath(worldId);
+  if (!fs.existsSync(p)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error(`[world-assets] Failed to parse ${p}: ${e.message}`);
+    return [];
+  }
+}
+function writeWorldAssets(worldId, list) {
+  fs.mkdirSync(worldAssetsDir(worldId), { recursive: true });
+  fs.writeFileSync(worldAssetsManifestPath(worldId), JSON.stringify(list, null, 2));
+}
+// Best-effort removal of a world's whole asset subdir (called on world delete).
+function removeWorldAssets(worldId) {
+  const dir = worldAssetsDir(worldId);
+  if (fs.existsSync(dir)) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); }
+    catch (e) { console.error(`[world-assets] Failed to remove ${dir}: ${e.message}`); }
+  }
+}
+
 function requireAuth(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ error: 'Not authenticated' });
+  // Absolute-lifetime ceiling: force re-login past the hard cap even on an active
+  // (sliding) session. Older sessions with no stamp are treated as expired.
+  if (Date.now() > (req.session.absoluteExp || 0)) {
+    req.session.destroy(() => {});
+    return res.status(401).json({ error: 'Session expired — please log in again' });
+  }
   const u = getUsers().find(u => u.username === req.session.user.username);
   if (!u || (u.tokenVersion || 1) !== (req.session.user.tokenVersion || 1)) {
     req.session.destroy(() => {});
@@ -208,17 +1001,9 @@ function safeId(id) {
   return typeof id === 'string' && /^[a-z0-9-]{1,80}$/i.test(id);
 }
 
-// Minimum password policy, shared by setup, admin-create, and password reset.
-// Length beats composition rules (NIST 800-63B), so we set a floor and otherwise
-// stay out of the way — long passphrases are encouraged. Returns an error string,
-// or null when the password passes. Bump MIN_PASSWORD_LENGTH to raise the floor.
-const MIN_PASSWORD_LENGTH = 10;
-function passwordError(password) {
-  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
-    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
-  }
-  return null;
-}
+// Password policy now lives in the shared ./validatePassword module (passwordError),
+// imported at the top of this file and ALSO used by adduser.js so the CLI and the
+// API can't drift. It enforces a length floor plus a basic weak/breached blocklist.
 
 // Reject malformed ids before any route touches the filesystem. safeId() bars
 // path separators and dots, so charPath()/portraitPath() can't be tricked into
@@ -614,7 +1399,7 @@ const isProd = process.env.NODE_ENV === 'production';
 // NPM (Nginx Proxy Manager) terminates TLS and forwards over http with
 // X-Forwarded-* headers. Trust the first proxy hop so express-session sees the
 // request as secure and express-rate-limit reads the real client IP.
-app.set('trust proxy', 2);
+app.set('trust proxy', TRUST_PROXY_HOPS);
 
 // Security headers — addresses the ZAP "header not set" cluster (CSP,
 // clickjacking, nosniff, HSTS) and hides X-Powered-By in one place.
@@ -639,7 +1424,11 @@ app.set('trust proxy', 2);
 // throughout plus an injected <style> for bundle themes, which can't be nonce'd
 // without a large refactor. styleSrc 'unsafe-inline' is far lower risk than the
 // scriptSrc equivalent, so that's an acceptable resting state.
-const cspEnforce      = process.env.CSP_ENFORCE === 'true';
+// Default ON (enforced). Set CSP_ENFORCE=false to fall back to Report-Only for
+// debugging. The enforced CSP keeps 'unsafe-inline' in scriptSrc/styleSrc (see
+// below), so enforcing it does not break CRA's inlined runtime or React inline
+// styles — it just stops being advisory.
+const cspEnforce      = process.env.CSP_ENFORCE !== 'false';
 const cspInlineScript = process.env.CSP_INLINE_SCRIPT !== 'false'; // default: allow
 // scriptSrc components:
 //   'self'              — our own bundled JS
@@ -682,6 +1471,16 @@ app.use(helmet({
       // permit blob:. Allow blob: workers from our own origin only — narrow
       // surface, breaks dice rolls without it once CSP is enforced.
       workerSrc:      ["'self'", "blob:"],
+      // Helmet adds `upgrade-insecure-requests` by default. It's INERT in
+      // report-only mode, but once CSP is enforced it rewrites every relative
+      // subresource (our own /static/js bundle included) from http→https. This
+      // app is designed to speak plain HTTP internally with TLS terminated at a
+      // reverse proxy (and to run over http on localhost in dev), so that upgrade
+      // makes the browser request https on a port with no TLS — the bundle fails
+      // to load and the page goes white. Setting it to null removes the directive;
+      // real HTTPS is enforced by the proxy + HSTS, not by this. (`null` is
+      // helmet's documented way to drop a default directive.)
+      upgradeInsecureRequests: null,
     },
   },
   // HSTS only matters over HTTPS (prod, behind NPM). Browsers ignore it on
@@ -704,6 +1503,11 @@ if (!sessionSecret) {
 
 app.use(express.json({ limit: '1mb' }));
 app.use(session({
+  // File-backed store (backend/sessionStore.js) instead of express-session's
+  // default in-memory store, which leaks memory and drops every session on
+  // restart. Hand-rolled to avoid a new npm dependency, matching the app's
+  // JSON-per-record persistence convention.
+  store: createFileSessionStore({ dir: SESSIONS_DIR, ttlMs: 1000 * 60 * 60 * 24 * 7 }),
   secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
@@ -749,7 +1553,10 @@ app.use(session({
 //     have no session and no XSRF cookie; the URL token is the credential, so
 //     there's no ambient-cookie CSRF surface here to defend.
 // ---------------------------------------------------------------------------
-const csrfEnforce = process.env.CSRF_ENFORCE === 'true';
+// Default ON. Set CSRF_ENFORCE=false only to temporarily disable the validator
+// (the issuer always runs regardless). Every same-origin mutation carries the
+// token automatically via the SPA's fetch interceptor (frontend/src/index.js).
+const csrfEnforce = process.env.CSRF_ENFORCE !== 'false';
 const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const CSRF_EXEMPT_PATHS = [
   /^\/api\/login$/,
@@ -803,6 +1610,19 @@ app.use('/portraits', (req, res, next) => {
   setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
 }));
 
+// Serve world backdrop images. The asset dir holds only images (no JSON lives
+// here), but keep the same image-only guard as /portraits so nothing but an
+// image extension is ever served.
+app.use('/world-backdrops', (req, res, next) => {
+  if (!/\.(jpg|jpeg|png|webp|gif)$/i.test(req.path)) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  next();
+}, express.static(WORLD_ASSETS_DIR, {
+  index: false,
+  setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+}));
+
 // CORS — only needed in dev when the React dev server runs on a different
 // origin. Reflecting an arbitrary origin WITH credentials is a credential-theft
 // hole, so gate on an explicit allowlist (comma-separated CORS_ORIGINS env var).
@@ -815,13 +1635,29 @@ app.use((req, res, next) => {
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    // X-CSRF-Token must be allowed or cross-origin (dev) mutations get their CSRF
+    // header stripped by the preflight and fail once CSRF_ENFORCE is on (default).
+    res.header('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH');
     res.header('Vary', 'Origin');
   }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+// Global API rate limit — a broad ceiling so no single client can flood the
+// disk-scanning list/search routes and saturate the single Node event loop.
+// Deliberately generous (a busy SPA session fires many legit requests); it only
+// bites abuse, not real use. The stricter login/setup limiters stack on top.
+// trust proxy (set above) is what makes req.ip the real client IP here.
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max:      1000,             // ~66 req/min/IP sustained — ruinous only for a flood
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+app.use('/api', apiLimiter);
 
 // Path-traversal guard for every route with an :id param (characters AND
 // campaigns). Runs before the handler, so no id with a slash/dot/etc. ever
@@ -834,6 +1670,9 @@ app.param('id', (req, res, next, id) => {
 // Ensure directories exist
 if (!fs.existsSync(DATA_DIR))  fs.mkdirSync(DATA_DIR,  { recursive: true });
 if (!fs.existsSync(CHARS_DIR)) fs.mkdirSync(CHARS_DIR, { recursive: true });
+if (!fs.existsSync(LORE_DIR))  fs.mkdirSync(LORE_DIR,  { recursive: true });
+if (!fs.existsSync(WORLD_ASSETS_DIR)) fs.mkdirSync(WORLD_ASSETS_DIR, { recursive: true });
+if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
 // Bootstrap a first admin from env vars on a fresh install
 seedInitialAdmin();
@@ -842,13 +1681,16 @@ seedInitialAdmin();
 sheets.scanBundles(DATA_DIR);
 sheets.registerRoutes(app, DATA_DIR, requireAuth);
 
+// Scan/seed lore packs (Keep) — mirrors scanBundles for the world-building side.
+packs.scanPacks(DATA_DIR);
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
 // Pre-computed at startup so unknown-username login attempts take the same
 // ~100ms as a real bcrypt compare, preventing timing-based username enumeration.
-const DUMMY_HASH = bcrypt.hashSync('__dummy_sentinel__', 10);
+const DUMMY_HASH = bcrypt.hashSync('__dummy_sentinel__', BCRYPT_COST);
 
 // Brute-force protection: cap login attempts per IP. Counts all attempts
 // (not just failures) so a flood of guesses can't slip through.
@@ -860,13 +1702,37 @@ const loginLimiter = rateLimit({
   message: { error: 'Too many login attempts. Try again later.' },
 });
 
-app.post('/api/login', loginLimiter, async (req, res) => {
+// Per-USERNAME cap, layered on top of the per-IP one. The per-IP limiter alone
+// lets an attacker with many IPs (a botnet / rotating proxies) keep guessing a
+// single account — this ceiling throttles attempts against one username no
+// matter where they come from. Keyed on the (lowercased) submitted username.
+const loginUserLimiter = rateLimit({
+  windowMs: 30 * 60 * 1000,
+  max:      20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  keyGenerator: (req) => `login:${String(req.body?.username || '').toLowerCase()}`,
+  message: { error: 'Too many login attempts for this account. Try again later.' },
+});
+
+// Tighter cap on account-mutation routes (create/reset). These are admin-gated
+// already, but a stricter throttle limits abuse if an admin session is hijacked.
+const accountLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max:      20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { error: 'Too many account changes. Try again later.' },
+});
+
+app.post('/api/login', loginLimiter, loginUserLimiter, async (req, res) => {
   const { username, password } = req.body;
   const users = getUsers();
   const user  = users.find(u => u.username === username);
   const hash  = user ? user.password : DUMMY_HASH;
   const match = await bcrypt.compare(String(password || ''), hash);
   if (!user || !match) return res.status(401).json({ error: 'Invalid credentials' });
+  req.session.absoluteExp = Date.now() + MAX_SESSION_AGE_MS;
   req.session.user = {
     username:     user.username,
     admin:        user.admin    || false,
@@ -974,7 +1840,7 @@ app.post('/api/setup', setupLimiter, async (req, res) => {
   const pwErr = passwordError(password);
   if (pwErr) return res.status(400).json({ error: pwErr });
 
-  const hash = await bcrypt.hash(password, 10);
+  const hash = await bcrypt.hash(password, BCRYPT_COST);
 
   // Re-check AFTER the async hash: the window must still be open. Closes the
   // tiny single-process race where two requests both saw zero users.
@@ -987,6 +1853,7 @@ app.post('/api/setup', setupLimiter, async (req, res) => {
   saveUsers([{ username, password: hash, admin: true, gm: true, player: true }]);
 
   // Log them straight in so the wizard lands on the roster.
+  req.session.absoluteExp = Date.now() + MAX_SESSION_AGE_MS;
   req.session.user = { username, admin: true, gm: true, player: true, theme: 'tavern' };
   res.json(req.session.user);
 });
@@ -1013,13 +1880,19 @@ app.get('/api/users', requireAuth, requireAdmin, (req, res) => {
 });
 
 // POST /api/users — create a user   body: { username, password, admin, gm, player }
-app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/users', accountLimiter, requireAuth, requireAdmin, async (req, res) => {
   const username = String(req.body?.username || '').trim();
   const password = String(req.body?.password || '');
   if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
 
     const usernameError = validateUsername(username);
   if (usernameError) return res.status(400).json({ error: usernameError });
+
+  // Enforce the shared password policy here too — previously this route skipped
+  // it, so an admin-created account could be weaker than a setup/reset one. Same
+  // passwordError() the CLI and every other path uses, so the floor can't drift.
+  const pwErr = passwordError(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
 
   const users = getUsers();
   if (users.find(u => u.username.toLowerCase() === username.toLowerCase())) {
@@ -1028,7 +1901,7 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
 
   const user = {
     username,
-    password:     await bcrypt.hash(password, 10),
+    password:     await bcrypt.hash(password, BCRYPT_COST),
     admin:        !!req.body.admin,
     gm:           !!req.body.gm,
     player:       !!req.body.player,
@@ -1041,7 +1914,7 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
 
 // PATCH /api/users/:username — update roles and/or reset password
 //   body may include any of: { admin, gm, player, password }
-app.patch('/api/users/:username', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/users/:username', accountLimiter, requireAuth, requireAdmin, async (req, res) => {
   const users = getUsers();
   const user  = users.find(u => u.username === req.params.username);
   if (!user) return res.status(404).json({ error: 'Not found' });
@@ -1059,7 +1932,7 @@ app.patch('/api/users/:username', requireAuth, requireAdmin, async (req, res) =>
   if (req.body.password) {
     const pwErr = passwordError(String(req.body.password));
     if (pwErr) return res.status(400).json({ error: pwErr });
-    user.password = await bcrypt.hash(String(req.body.password), 10);
+    user.password = await bcrypt.hash(String(req.body.password), BCRYPT_COST);
     changed = true;
   }
   if (changed) user.tokenVersion = (user.tokenVersion || 1) + 1;
@@ -1211,8 +2084,37 @@ const upload = multer({
   },
 });
 
+// World backdrop upload — same pattern as the portrait multer, keyed to a world
+// instead of a character. requireWorldOwner runs BEFORE this (see the route), so
+// by the time the file lands the requester is confirmed to own the world; the
+// filename comes from the validated :id, never from the client. A backdrop is a
+// scenic map, so the cap is a touch higher than a portrait's.
+const worldBackdropStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    if (!fs.existsSync(WORLD_ASSETS_DIR)) fs.mkdirSync(WORLD_ASSETS_DIR, { recursive: true });
+    cb(null, WORLD_ASSETS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${req.params.id}.backdrop${ext}`);
+  },
+});
+const worldBackdropUpload = multer({
+  storage: worldBackdropStorage,
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB cap — backdrops are scenic
+  fileFilter: (req, file, cb) => cb(null, /\.(jpg|jpeg|png|webp|gif)$/i.test(file.originalname)),
+});
+
 app.post('/api/characters/:id/portrait', requireAuth, validId, requireCharOwner, upload.single('portrait'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
+
+  // Magic-byte verify the written file — a renamed non-image is deleted and
+  // rejected, matching the attachment / lore-asset upload guarantee.
+  const ext = path.extname(req.file.filename).slice(1).toLowerCase();
+  if (!verifyImageFile(req.file.path, ext)) {
+    try { fs.unlinkSync(req.file.path); } catch { /* best effort */ }
+    return res.status(415).json({ error: "File contents don't match its type" });
+  }
 
   const owner = req.portraitOwner || req.session.user.username;
   const portraitUrl = `/portraits/${owner}/${req.file.filename}`;
@@ -1302,6 +2204,17 @@ const attachUpload = multer({
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).slice(1).toLowerCase();
     cb(null, ATTACH_EXTS.has(ext)); // drop disallowed extensions before buffering
+  },
+});
+
+// Lore-asset uploads reuse the exact same policy as character attachments:
+// buffer in memory, same allowlist, magic-sniff + hash in the handler.
+const loreAssetUpload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: ATTACH_MAX_BYTES },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).slice(1).toLowerCase();
+    cb(null, ATTACH_EXTS.has(ext));
   },
 });
 
@@ -1972,6 +2885,11 @@ app.post('/api/campaigns', requireAuth, requireGM, (req, res) => {
   const { name, sheetId, sheetName } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
 
+  // Optional world link (§4.7). resolveOwnedWorldId returns null for standalone,
+  // the id for a world this GM owns, or undefined for anything invalid.
+  const worldId = resolveOwnedWorldId(req.body?.worldId, req.session.user.username);
+  if (worldId === undefined) return res.status(400).json({ error: 'Invalid world' });
+
   const campaigns = getCampaigns();
 
   // Ensure unique join code
@@ -1984,6 +2902,7 @@ app.post('/api/campaigns', requireAuth, requireGM, (req, res) => {
     name,
     sheetId:   sheetId   || null,
     sheetName: sheetName || null,
+    worldId,                              // app-owned: null or a world this GM owns
     joinCode,
     ownedBy:   req.session.user.username,
     createdAt: new Date().toISOString(),
@@ -1994,6 +2913,298 @@ app.post('/api/campaigns', requireAuth, requireGM, (req, res) => {
   res.json(campaign);
 });
 
+// PUT /api/campaigns/:id — edit a campaign's world link (and optionally its name).
+// Owner-only. worldId is validated for same-GM ownership exactly like create, so a
+// GM can link an existing campaign to a world, move it, or unlink it (null). The
+// world's members ledger is NOT touched here — access persists at the user level.
+app.put('/api/campaigns/:id', requireAuth, requireGM, validId, (req, res) => {
+  const campaigns = getCampaigns();
+  const campaign  = campaigns.find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+  if (!req.session.user.admin && campaign.ownedBy !== req.session.user.username) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if ('worldId' in req.body) {
+    const worldId = resolveOwnedWorldId(req.body.worldId, campaign.ownedBy);
+    if (worldId === undefined) return res.status(400).json({ error: 'Invalid world' });
+    campaign.worldId = worldId;
+  }
+  if (typeof req.body?.name === 'string' && req.body.name.trim()) {
+    campaign.name = req.body.name.trim();
+  }
+  // The GM-authored prose (Wave A). Each key is picked EXPLICITLY — never spread
+  // req.body, or a client could set ownedBy/joinCode/worldId through this route.
+  // Absent key = leave alone; empty string = clear. Capped so a paste can't bloat
+  // campaigns.json, which is read on every join-by-code lookup.
+  for (const k of CAMPAIGN_TEXT_FIELDS) {
+    if (typeof req.body?.[k] !== 'string') continue;
+    campaign[k] = req.body[k].slice(0, k === 'threads' ? 16000 : 4000);
+  }
+  saveCampaigns(campaigns);
+  res.json(campaign);
+});
+
+// GET /api/campaigns/:id/overview — the campaign surface. The FIRST campaign route
+// a non-owner may call; every other campaign route stays owner-only.
+//
+// No requireGM: a plain player with a character here must reach it. Access is
+// decided by resolveCampaignRole, and an unknown viewer gets 404 (not 403) so a
+// stranger never learns the id exists. serializeCampaignForRole then strips the
+// join code and fog for players — see loreAccess.js.
+app.get('/api/campaigns/:id/overview', requireAuth, validId, (req, res) => {
+  const campaign = getCampaigns().find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+
+  const role = resolveCampaignRole(campaign, req.session.user.username);
+  if (!role) return res.status(404).json({ error: 'Not found' });
+
+  const roster = campaignRoster(campaign);
+  // Session stats are role-scoped: a player counting sessions they cannot read
+  // would learn how much unpublished material the GM is sitting on.
+  const stats = sessionStatsForRole(readSessions(campaign.id), role);
+  const out = serializeCampaignForRole(campaign, role, {
+    characterCount: roster.length,
+    roster,
+    sessionCount: stats.sessionCount,
+    lastPlayed:   stats.lastPlayed,
+  });
+  if (!out) return res.status(404).json({ error: 'Not found' });   // belt and braces
+  res.json(out);
+});
+
+
+// ---------------------------------------------------------------------------
+// Sessions (Wave B). Ordering is ALWAYS by number — see loreAccess.js.
+// ---------------------------------------------------------------------------
+
+// GET /api/campaigns/:id/sessions — the play log for whoever is asking.
+// Role-based like the overview: a stranger gets 404, never 403. A player receives
+// only SHARED records with prep absent by construction; hidden sessions are
+// dropped from the list entirely rather than returned blank.
+app.get('/api/campaigns/:id/sessions', requireAuth, validId, (req, res) => {
+  const campaign = getCampaigns().find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+
+  const role = resolveCampaignRole(campaign, req.session.user.username);
+  if (!role) return res.status(404).json({ error: 'Not found' });
+
+  res.json({
+    role,
+    sessions: serializeSessionsForRole(readSessions(campaign.id), role),
+  });
+});
+
+// POST /api/campaigns/:id/sessions — start a session. Owner only.
+// The number is assigned SERVER-SIDE as max+1 and is never taken from the body:
+// it is the spine the whole log sorts on, so a client must not be able to collide
+// two sessions on one number.
+app.post('/api/campaigns/:id/sessions', requireAuth, requireGM, validId, (req, res) => {
+  const campaign = getCampaigns().find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+  if (!ownsCampaign(campaign, req.session.user)) return res.status(403).json({ error: 'Forbidden' });
+
+  const sessions = readSessions(campaign.id);
+  const nextNum  = sessions.reduce((n, s) => Math.max(n, Number.isInteger(s.number) ? s.number : 0), 0) + 1;
+
+  const built = sessionFromBody(req.body, {
+    id: crypto.randomUUID(),
+    number: nextNum,
+    createdAt: new Date().toISOString(),
+  }, campaignCalendar(campaign));
+  if (built.error) return res.status(400).json({ error: built.error });
+
+  sessions.push(built.session);
+  writeSessions(campaign.id, sessions);
+  res.status(201).json(serializeSessionForRole(built.session, 'owner'));
+});
+
+// PUT /api/campaigns/:id/sessions/:sessionId — owner only.
+// `validId` only guards req.params.id, so :sessionId is checked explicitly here.
+app.put('/api/campaigns/:id/sessions/:sessionId', requireAuth, requireGM, validId, (req, res) => {
+  if (!safeId(req.params.sessionId)) return res.status(400).json({ error: 'Invalid id' });
+  const campaign = getCampaigns().find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+  if (!ownsCampaign(campaign, req.session.user)) return res.status(403).json({ error: 'Forbidden' });
+
+  const sessions = readSessions(campaign.id);
+  const i = sessions.findIndex(s => s.id === req.params.sessionId);
+  if (i < 0) return res.status(404).json({ error: 'Not found' });
+
+  const built = sessionFromBody(req.body, sessions[i], campaignCalendar(campaign));
+  if (built.error) return res.status(400).json({ error: built.error });
+
+  // Renumbering is a deliberate, separate act: the body may set `number`, but it
+  // must be a positive integer and it never happens implicitly on a content edit.
+  if (Number.isInteger(req.body?.number) && req.body.number > 0) {
+    built.session.number = req.body.number;
+  }
+
+  sessions[i] = built.session;
+  writeSessions(campaign.id, sessions);
+  res.json(serializeSessionForRole(built.session, 'owner'));
+});
+
+// DELETE /api/campaigns/:id/sessions/:sessionId — owner only.
+// Numbers are NOT re-packed afterwards: session 4 stays session 4 in everyone's
+// notes, and a gap in the log is honest about what happened.
+app.delete('/api/campaigns/:id/sessions/:sessionId', requireAuth, requireGM, validId, (req, res) => {
+  if (!safeId(req.params.sessionId)) return res.status(400).json({ error: 'Invalid id' });
+  const campaign = getCampaigns().find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+  if (!ownsCampaign(campaign, req.session.user)) return res.status(403).json({ error: 'Forbidden' });
+
+  const sessions = readSessions(campaign.id);
+  const next = sessions.filter(s => s.id !== req.params.sessionId);
+  if (next.length === sessions.length) return res.status(404).json({ error: 'Not found' });
+  writeSessions(campaign.id, next);
+  removeSessionAssets(campaign.id, req.params.sessionId);
+  res.json({ ok: true });
+});
+
+// Session attachments — GM upload/manage; a player may fetch a SHARED asset only
+// on a session they can already see (canSeeSession). "Store inert, serve
+// guarded" — see the block comment above readSessionAssets for the full model.
+
+// GET the list for whoever is asking. Owner sees every asset with its
+// visibility; a player sees only the shared ones, and only once the session
+// itself is shared — an attachment cannot be more visible than its session.
+app.get('/api/campaigns/:id/sessions/:sessionId/assets', requireAuth, validId, (req, res) => {
+  if (!safeId(req.params.sessionId)) return res.status(400).json({ error: 'Invalid id' });
+  const campaign = getCampaigns().find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+  const role = resolveCampaignRole(campaign, req.session.user.username);
+  if (!role) return res.status(404).json({ error: 'Not found' });
+
+  const session = readSessions(campaign.id).find(s => s.id === req.params.sessionId);
+  if (!session || !canSeeSession(session, role)) return res.status(404).json({ error: 'Not found' });
+
+  const list = readSessionAssets(campaign.id, req.params.sessionId);
+  const out = role === 'owner' ? list : list.filter(a => a.visibility === 'shared');
+  res.json({ assets: out });
+});
+
+// POST upload — owner only. Body field `visibility` ('hidden'|'shared'; default
+// hidden, matching the session record's own default-closed posture).
+app.post('/api/campaigns/:id/sessions/:sessionId/assets',
+  requireAuth, requireGM, validId, sessionAssetUpload.single('file'),
+  (req, res) => {
+    if (!safeId(req.params.sessionId)) return res.status(400).json({ error: 'Invalid id' });
+    const campaign = getCampaigns().find(c => c.id === req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Not found' });
+    if (!ownsCampaign(campaign, req.session.user)) return res.status(403).json({ error: 'Forbidden' });
+    const session = readSessions(campaign.id).find(s => s.id === req.params.sessionId);
+    if (!session) return res.status(404).json({ error: 'Not found' });
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+
+    const ext = path.extname(req.file.originalname).slice(1).toLowerCase();
+    if (!ATTACH_EXTS.has(ext))             return res.status(415).json({ error: 'File type not allowed' });
+    if (!sniffMagic(ext, req.file.buffer)) return res.status(415).json({ error: "File contents don't match its type" });
+
+    const list = readSessionAssets(campaign.id, req.params.sessionId);
+    if (list.length >= SESSION_ASSET_MAX_PER_SESSION) {
+      return res.status(413).json({ error: `Limit of ${SESSION_ASSET_MAX_PER_SESSION} files per session reached` });
+    }
+    const total = list.reduce((n, a) => n + (a.size || 0), 0);
+    if (total + req.file.size > ATTACH_MAX_TOTAL_BYTES) {
+      return res.status(413).json({ error: 'Storage limit for this session reached' });
+    }
+
+    const sha256 = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+    let key;
+    const used = new Set(list.map(a => a.key));
+    do { key = generateToken(12); } while (used.has(key));
+
+    fs.mkdirSync(CAMPAIGN_SIDECAR_DIR, { recursive: true });
+    fs.writeFileSync(sessionAssetBlobPath(campaign.id, req.params.sessionId, key, ext), req.file.buffer);
+
+    const asset = {
+      key,
+      name:       String(req.file.originalname).slice(0, 200),
+      ext,
+      mime:       ATTACH_MIME[ext],
+      size:       req.file.size,
+      sha256,
+      isImage:    LORE_IMAGE_EXTS.has(ext),
+      visibility: req.body?.visibility === 'shared' ? 'shared' : 'hidden',
+      url:        `/api/campaigns/${campaign.id}/sessions/${req.params.sessionId}/assets/${key}`,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: req.session.user.username,
+    };
+    list.push(asset);
+    writeSessionAssets(campaign.id, req.params.sessionId, list);
+    res.json({ asset, assets: list });
+  });
+
+// PUT — owner only. The only mutable field is `visibility`; everything else
+// about an already-uploaded file is immutable (re-upload to change the file).
+app.put('/api/campaigns/:id/sessions/:sessionId/assets/:key', requireAuth, requireGM, validId, (req, res) => {
+  if (!safeId(req.params.sessionId)) return res.status(400).json({ error: 'Invalid id' });
+  const key = req.params.key;
+  if (!/^[A-Za-z0-9]{1,40}$/.test(key)) return res.status(400).json({ error: 'Bad key' });
+  const campaign = getCampaigns().find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+  if (!ownsCampaign(campaign, req.session.user)) return res.status(403).json({ error: 'Forbidden' });
+  if (!SESSION_VISIBILITY.includes(req.body?.visibility)) return res.status(400).json({ error: 'Invalid visibility' });
+
+  const list  = readSessionAssets(campaign.id, req.params.sessionId);
+  const asset = list.find(a => a.key === key);
+  if (!asset) return res.status(404).json({ error: 'No such asset' });
+  asset.visibility = req.body.visibility;
+  writeSessionAssets(campaign.id, req.params.sessionId, list);
+  res.json({ asset, assets: list });
+});
+
+// GET one (download/inline). Re-checks BOTH the asset's own visibility and the
+// owning session's — a shared asset on a hidden session must not leak.
+app.get('/api/campaigns/:id/sessions/:sessionId/assets/:key', requireAuth, validId, (req, res) => {
+  if (!safeId(req.params.sessionId)) return res.status(400).json({ error: 'Invalid id' });
+  const key = req.params.key;
+  if (!/^[A-Za-z0-9]{1,40}$/.test(key)) return res.status(400).json({ error: 'Bad key' });
+  const campaign = getCampaigns().find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+  const role = resolveCampaignRole(campaign, req.session.user.username);
+  if (!role) return res.status(404).json({ error: 'Not found' });
+
+  const session = readSessions(campaign.id).find(s => s.id === req.params.sessionId);
+  if (!session || !canSeeSession(session, role)) return res.status(404).json({ error: 'Not found' });
+
+  const asset = readSessionAssets(campaign.id, req.params.sessionId).find(a => a.key === key);
+  if (!asset) return res.status(404).json({ error: 'No such asset' });
+  if (role !== 'owner' && asset.visibility !== 'shared') return res.status(404).json({ error: 'Not found' });
+
+  const p = sessionAssetBlobPath(campaign.id, req.params.sessionId, asset.key, asset.ext);
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'File missing' });
+
+  const disposition = ATTACH_INLINE.has(asset.ext) ? 'inline' : 'attachment';
+  res.setHeader('Content-Type', ATTACH_MIME[asset.ext] || 'application/octet-stream');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', `${disposition}; ${dispositionFilename(asset.name)}`);
+  res.setHeader('Content-Length', asset.size);
+  const stream = fs.createReadStream(p);
+  stream.on('error', () => { if (!res.headersSent) res.status(500).end(); else res.destroy(); });
+  stream.pipe(res);
+});
+
+// DELETE — owner only.
+app.delete('/api/campaigns/:id/sessions/:sessionId/assets/:key', requireAuth, requireGM, validId, (req, res) => {
+  if (!safeId(req.params.sessionId)) return res.status(400).json({ error: 'Invalid id' });
+  const key = req.params.key;
+  if (!/^[A-Za-z0-9]{1,40}$/.test(key)) return res.status(400).json({ error: 'Bad key' });
+  const campaign = getCampaigns().find(c => c.id === req.params.id);
+  if (!campaign) return res.status(404).json({ error: 'Not found' });
+  if (!ownsCampaign(campaign, req.session.user)) return res.status(403).json({ error: 'Forbidden' });
+
+  const list  = readSessionAssets(campaign.id, req.params.sessionId);
+  const asset = list.find(a => a.key === key);
+  if (!asset) return res.status(404).json({ error: 'No such asset' });
+
+  const p = sessionAssetBlobPath(campaign.id, req.params.sessionId, asset.key, asset.ext);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+  const next = list.filter(a => a.key !== key);
+  writeSessionAssets(campaign.id, req.params.sessionId, next);
+  res.json({ ok: true, assets: next });
+});
+
 app.delete('/api/campaigns/:id', requireAuth, requireGM, validId, (req, res) => {
   const campaigns = getCampaigns();
   const campaign  = campaigns.find(c => c.id === req.params.id);
@@ -2001,6 +3212,7 @@ app.delete('/api/campaigns/:id', requireAuth, requireGM, validId, (req, res) => 
   if (!req.session.user.admin && campaign.ownedBy !== req.session.user.username) {
     return res.status(403).json({ error: 'Forbidden' });
   }
+  for (const s of readSessions(campaign.id)) removeSessionAssets(campaign.id, s.id);
   saveCampaigns(campaigns.filter(c => c.id !== req.params.id));
   res.json({ ok: true });
 });
@@ -2008,7 +3220,7 @@ app.delete('/api/campaigns/:id', requireAuth, requireGM, validId, (req, res) => 
 // POST /api/campaigns/:id/status   body: { status: "active" | "archived" }
 app.post('/api/campaigns/:id/status', requireAuth, requireGM, validId, (req, res) => {
   const status = req.body?.status;
-  if (!['active', 'archived'].includes(status)) {
+  if (!CAMPAIGN_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
   const campaigns = getCampaigns();
@@ -2020,6 +3232,967 @@ app.post('/api/campaigns/:id/status', requireAuth, requireGM, validId, (req, res
   campaign.status = status;
   saveCampaigns(campaigns);
   res.json({ id: campaign.id, status });
+});
+
+// ===========================================================================
+// Keep — World CRUD (Steps 1-2 backend) + Lore CRUD + version history
+//
+// All routes: requireAuth → requireGM → validId (on :id) → requireWorldOwner.
+// The client body never sets app-owned fields (id, worldId, categoryId,
+// createdBy, ownedBy, timestamps) — those are read from disk / server-generated.
+// ===========================================================================
+
+// GET /api/worlds — every world the requester can see, each tagged with the
+// viewer's `role`: worlds they OWN (role 'owner', full record) plus, since §4.8,
+// worlds where they're a ledger MEMBER (role = their tier, `members` stripped).
+// No requireGM: a plain player who's a member must get their member worlds here.
+app.get('/api/worlds', requireAuth, (req, res) => {
+  const username = req.session.user.username;
+  const out = [];
+  for (const w of getWorlds()) {
+    if (w.ownedBy === username) { out.push({ ...w, role: 'owner' }); continue; }
+    const role = worldRoleFor(w, username);
+    if (role) out.push(memberWorldView(w, role));
+  }
+  res.json(out);
+});
+
+// GET /api/worlds/:id — one world + the viewer's role (owner or member tier).
+// Members get the ledger stripped; the landing lives on the record, so this is
+// how a member receives it. 404 (via requireWorldRead) for anyone with no access.
+app.get('/api/worlds/:id', requireAuth, validId, requireWorldRead, (req, res) => {
+  res.json(req.worldRole === 'owner'
+    ? { ...req.world, role: 'owner' }
+    : memberWorldView(req.world, req.worldRole));
+});
+
+// POST /api/worlds — create. Server owns id, ownedBy, createdAt, packId, status.
+app.post('/api/worlds', requireAuth, requireGM, (req, res) => {
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  if (!name) return res.status(400).json({ error: 'Name required' });
+  const worlds = getWorlds();
+  const world = {
+    id:          newRecordId(name),
+    name:        name.slice(0, 120),
+    description: typeof req.body?.description === 'string' ? req.body.description.slice(0, 2000) : '',
+    packId:      'default',
+    status:      'active',
+    ownedBy:     req.session.user.username,
+    createdAt:   new Date().toISOString(),
+  };
+  worlds.push(world);
+  saveWorlds(worlds);
+  res.json(world);
+});
+
+// PUT /api/worlds/:id — update name/description only. App-owned fields are
+// re-read from disk (req.world) and never taken from the body.
+app.put('/api/worlds/:id', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  if (typeof req.body?.name === 'string' && req.body.name.trim()) {
+    world.name = req.body.name.trim().slice(0, 120);
+  }
+  if (typeof req.body?.description === 'string') {
+    world.description = req.body.description.slice(0, 2000);
+  }
+  saveWorlds(worlds);
+  res.json(world);
+});
+
+// DELETE /api/worlds/:id — remove the world record and its lore tree.
+app.delete('/api/worlds/:id', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const worlds = getWorlds();
+  saveWorlds(worlds.filter(w => w.id !== req.params.id));
+  // Best-effort cleanup of the world's lore directory (entries + history).
+  const dir = loreDir(req.params.id);
+  if (fs.existsSync(dir)) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); }
+    catch (e) { console.error(`[lore] Failed to remove ${dir}: ${e.message}`); }
+  }
+  // …and its backdrop asset (whichever extension variant exists).
+  PORTRAIT_EXTENSIONS.forEach(ext => {
+    const p = worldBackdropPath(req.params.id, ext);
+    if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch { /* best-effort */ } }
+  });
+  // …and its world-level asset store (landing-page images + attachments).
+  removeWorldAssets(req.params.id);
+  res.json({ ok: true });
+});
+
+// POST /api/worlds/:id/status — active | archived.
+app.post('/api/worlds/:id/status', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const status = req.body?.status;
+  if (!['active', 'archived'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  world.status = status;
+  saveWorlds(worlds);
+  res.json({ id: world.id, status });
+});
+
+// ---- World access ledger — GM management (§4.7) ----------------------------
+// All owner-only (requireWorldOwner); :userId/:campaignId/:charId validated
+// in-handler. The ledger (world.members) is app-owned — written ONLY here and by
+// the join hook, never by the generic PUT /api/worlds/:id.
+
+// GET /api/worlds/:id/members — the ledger enriched for display: each member user
+// + tier + grant metadata + which of THEIR characters currently sit in this
+// world's campaigns (derived by scanning that user's characters for a campaignId
+// in the world's campaign set). No player data leaks — owner-only route.
+app.get('/api/worlds/:id/members', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const members  = (req.world.members && typeof req.world.members === 'object') ? req.world.members : {};
+  const worldCamps = campaignsOfWorld(req.params.id);
+  const keys       = campaignKeySet(worldCamps);
+  const campName   = new Map(worldCamps.map(c => [c.id, c.name]));
+
+  const out = Object.entries(members).map(([userId, entry]) => {
+    const characters = userCharacterFiles(userId)
+      .map(({ id, filePath }) => ({ id, char: readCharFull({ filePath, username: userId }) }))
+      .filter(({ char }) => matchesCampaign(char.campaignId, keys))
+      .map(({ id, char }) => ({
+        id,
+        name:         char.info?.name || 'Unnamed',
+        campaignId:   char.campaignId,
+        campaignName: char.campaignName || campName.get(char.campaignId) || null,
+      }));
+    return {
+      userId,
+      tier:       entry?.tier || 'read',
+      grantedAt:  entry?.grantedAt || null,
+      grantedVia: entry?.grantedVia || null,
+      characters,
+    };
+  }).sort((a, b) => a.userId.localeCompare(b.userId));
+
+  res.json(out);
+});
+
+// GET /api/worlds/:id/campaigns — the campaigns attached to this world (§4.10),
+// i.e. campaigns whose worldId === this world (the §4.7 link), enriched for a
+// read-only display: name, join code, owner, and how many characters / distinct
+// members currently sit in each. Owner-only — no player data leaks. We derive the
+// counts with a SINGLE character scan (findAllCharFiles), tallying by the
+// campaign key (id OR join code) the character is tagged with, mirroring the
+// members route's matching discipline.
+app.get('/api/worlds/:id/campaigns', requireAuth, validId, requireWorldRead, (req, res) => {
+  // Wave A widened this from owner-only to any world MEMBER, because the rail
+  // needs a campaign list a player can fetch. requireWorldRead (not requireGM):
+  // a plain player who is a ledger member must reach it, and a stranger 404s.
+  //
+  // What a non-owner gets is narrowed twice, below:
+  //   • only campaigns they actually belong to (a character tagged with it) —
+  //     world membership does NOT imply campaign membership;
+  //   • no joinCode, no memberCount. The code is a bearer credential (anyone
+  //     holding it can attach a character) and the head-count is GM bookkeeping.
+  // The owner's payload is unchanged, so WorldSettingsModal keeps working as-is.
+  const viewerIsOwner = req.worldRole === 'owner';
+  const viewer        = req.session.user.username;
+  const worldCamps    = campaignsOfWorld(req.params.id);
+  // key (id or UPPER join code) -> campaignId, so a character tagged with either resolves.
+  const keyToId = new Map();
+  for (const c of worldCamps) {
+    if (c.id)       keyToId.set(c.id, c.id);
+    if (c.joinCode) keyToId.set(String(c.joinCode).toUpperCase(), c.id);
+  }
+  const charCount = new Map();
+  const memberSet = new Map();
+  for (const c of worldCamps) { charCount.set(c.id, 0); memberSet.set(c.id, new Set()); }
+
+  for (const filePath of findAllCharFiles()) {
+    let char;
+    try { char = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { continue; }
+    const stored = char.campaignId;
+    if (!stored) continue;
+    const v = String(stored).trim();
+    const cid = keyToId.get(v) || keyToId.get(v.toUpperCase());
+    if (!cid) continue;
+    charCount.set(cid, (charCount.get(cid) || 0) + 1);
+    const owner = path.relative(CHARS_DIR, filePath).split(path.sep)[0];   // dir = username
+    memberSet.get(cid).add(owner);
+  }
+
+  const out = worldCamps
+    // A non-owner sees only campaigns they hold a character in. memberSet was
+    // built by the scan above, so this costs nothing extra.
+    .filter(c => viewerIsOwner || (memberSet.get(c.id) || new Set()).has(viewer))
+    .map(c => {
+      const row = {
+        id:             c.id,
+        name:           c.name,
+        ownedBy:        c.ownedBy,
+        status:         c.status || 'active',
+        characterCount: charCount.get(c.id) || 0,
+      };
+      if (viewerIsOwner) {
+        row.joinCode    = c.joinCode;
+        row.memberCount = (memberSet.get(c.id) || new Set()).size;
+      }
+      return row;
+    })
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  res.json({ campaigns: out });
+});
+
+// PUT /api/worlds/:id/members/:userId — set an existing member's tier. Validates
+// the tier and the username shape; the world owner is never a ledger member.
+app.put('/api/worlds/:id/members/:userId', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const userId = req.params.userId;
+  if (validateUsername(userId)) return res.status(400).json({ error: 'Invalid user' });
+  if (userId === req.world.ownedBy) return res.status(400).json({ error: 'The world owner is not a member' });
+  const tier = req.body?.tier;
+  if (!MEMBER_TIERS.includes(tier)) return res.status(400).json({ error: 'Invalid tier' });
+
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  if (!world.members || !world.members[userId]) return res.status(404).json({ error: 'Not a member' });
+  world.members[userId].tier = tier;   // keep grantedAt/grantedVia
+  saveWorlds(worlds);
+  res.json({ userId, tier });
+});
+
+// DELETE /api/worlds/:id/members/:userId — REVOKE + CASCADE. Remove the ledger
+// entry AND clear the campaign envelope on that user's characters whose campaign
+// belongs to this world (read-from-disk, per character). "Removed from the world
+// ⇒ removed from its campaigns." Only the target user's characters are touched.
+app.delete('/api/worlds/:id/members/:userId', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const userId = req.params.userId;
+  if (validateUsername(userId)) return res.status(400).json({ error: 'Invalid user' });
+  // The owner is never a ledger member, so revoking them is a no-op on the ledger —
+  // but the CASCADE below would still run and strip the campaign envelope off the
+  // owner's own characters in their own world. Guard the row, as the PUT above does.
+  if (userId === req.world.ownedBy) return res.status(400).json({ error: 'The world owner is not a member' });
+
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  const existed = !!(world.members && world.members[userId]);
+  if (world.members) delete world.members[userId];
+  saveWorlds(worlds);
+
+  // Cascade the user's characters out of this world's campaigns.
+  const cleared = clearCampaignForUserChars(userId, campaignKeySet(campaignsOfWorld(req.params.id)));
+
+  res.json({ ok: true, revoked: existed, charactersCleared: cleared });
+});
+
+// DELETE /api/worlds/:id/campaigns/:campaignId/characters/:charId — GM
+// campaign-kick: clear the campaign envelope on ONE character. Does NOT touch the
+// ledger — "kicked from a campaign keeps world access." Scoped to a campaign that
+// belongs to THIS world (and thus this owner), so a GM can only kick within their
+// own world's campaigns.
+app.delete('/api/worlds/:id/campaigns/:campaignId/characters/:charId', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const { campaignId, charId } = req.params;
+  if (!safeId(charId)) return res.status(400).json({ error: 'Invalid character id' });
+
+  const camp = campaignsOfWorld(req.params.id).find(c => c.id === campaignId);
+  if (!camp) return res.status(404).json({ error: 'No such campaign in this world' });
+
+  const found = findCharFile(charId);
+  if (!found) return res.status(404).json({ error: 'Character not found' });
+  const char = readCharFull(found);
+  if (!matchesCampaign(char.campaignId, campaignKeySet([camp]))) {
+    return res.status(400).json({ error: 'Character is not in that campaign' });
+  }
+  char.campaignId   = null;
+  char.campaignCode = null;
+  char.campaignName = null;
+  char.updatedAt    = new Date().toISOString();
+  writeCharSplit(found.username, charId, char);
+
+  res.json({ ok: true, charId });
+});
+
+// POST /api/worlds/:id/backdrop — upload the world's backdrop image. Owner-only.
+// The image is one app-owned asset per world; the world record's `backdrop` field
+// is written here (server-owned), never taken from a generic body spread.
+app.post('/api/worlds/:id/backdrop', requireAuth, requireGM, validId, requireWorldOwner, worldBackdropUpload.single('backdrop'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+
+  // Magic-byte verify the written file — same guarantee as the portrait and
+  // attachment uploads: a renamed non-image is deleted and rejected.
+  const ext = path.extname(req.file.filename).slice(1).toLowerCase();
+  if (!verifyImageFile(req.file.path, ext)) {
+    try { fs.unlinkSync(req.file.path); } catch { /* best effort */ }
+    return res.status(415).json({ error: "File contents don't match its type" });
+  }
+
+  const url = `/world-backdrops/${req.file.filename}`;
+  // Remove older-extension variants so a png→jpg swap doesn't leave a stale file.
+  PORTRAIT_EXTENSIONS.forEach(ext => {
+    const old = worldBackdropPath(req.params.id, ext);
+    if (fs.existsSync(old) && old !== req.file.path) fs.unlinkSync(old);
+  });
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  world.backdrop = url;
+  saveWorlds(worlds);
+  res.json({ backdrop: url });
+});
+
+// DELETE /api/worlds/:id/backdrop — remove the image file and clear the field.
+app.delete('/api/worlds/:id/backdrop', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  PORTRAIT_EXTENSIONS.forEach(ext => {
+    const p = worldBackdropPath(req.params.id, ext);
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  });
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  if (world) world.backdrop = null;
+  saveWorlds(worlds);
+  res.json({ backdrop: null });
+});
+
+// GET /api/worlds/:id/categories — the world's pack's lore categories. Loader
+// is defensive: broken/missing pack falls back to the default set (see packs.js).
+// §4.8: readable by members. The owner gets ALL merged categories (hidden ones
+// flagged, needed for the rail + customize); a member gets only the non-hidden
+// ones — the server never even names a hidden category to a player.
+app.get('/api/worlds/:id/categories', requireAuth, validId, requireWorldRead, (req, res) => {
+  const merged = packs.applyCategoryConfig(packs.loadCategories(DATA_DIR, req.world.packId), req.world.categoryConfig);
+  res.json(req.worldRole === 'owner' ? merged : merged.filter(c => !c.hidden));
+});
+
+// GET /api/worlds/:id/calendar — the world's RESOLVED calendar: its own if the GM
+// authored one, else its pack's template, else null. Member-readable
+// (requireWorldRead) so any tier can render/format in-world dates on the reader +
+// timeline. A calendar is setting structure, not player data — safe for every
+// member, and every member needs it to read a date at all.
+app.get('/api/worlds/:id/calendar', requireAuth, validId, requireWorldRead, (req, res) => {
+  res.json({
+    calendar: resolveWorldCalendar(req.world),
+    hidden:   req.world.calendarHidden === true,
+    source:   calendarSourceOf(req.world),
+  });
+});
+
+// PUT /api/worlds/:id/calendar — the GM authors the world's own calendar.
+// body: { calendar: {...} }  |  { calendar: null } to clear.
+//
+// `calendar` is APP-OWNED: written ONLY here, never through the generic
+// PUT /api/worlds/:id, so a stray body spread can't reach it. We re-read the
+// record from disk and set just this one field, mirroring the landing/backdrop/
+// categoryConfig handlers.
+//
+// The body goes through the SAME packs.cleanCalendar the pack loader uses — one
+// validator for both authoring paths, so GM input can never be accepted in a
+// shape a pack file couldn't be. Clearing falls back to the pack's calendar,
+// which is why it DELETES the key instead of storing null: absent means "use the
+// template", and a stored null would be indistinguishable from a broken one.
+//
+// Owner-only (requireWorldOwner, not requireWorldWrite): the calendar is
+// structural — re-dating the spine moves every event on the timeline at once —
+// and structural powers stay with the owner, like the pack and category config.
+app.put('/api/worlds/:id/calendar', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const b = req.body || {};
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  if (!world) return res.status(404).json({ error: 'Not found' });
+
+  // Each key is picked EXPLICITLY — never spread req.body onto a world record, or
+  // a client could set ownedBy/packId/members through this route.
+  if ('calendar' in b) {
+    if (b.calendar == null) {
+      // Clearing DELETES the key rather than storing null: absent means "use the
+      // template", and a stored null would be indistinguishable from a broken one.
+      delete world.calendar;
+    } else {
+      const cleaned = packs.cleanCalendar(b.calendar, `world '${req.params.id}'`);
+      if (!cleaned) {
+        return res.status(400).json({ error: 'A calendar needs at least one month with a positive number of days' });
+      }
+      // The SAME rules the editor enforces (calendarMath.calendarIssues), so a
+      // client that skips its own checks can't store a calendar the editor would
+      // have refused. Warnings are deliberately NOT blocking — a week that doesn't
+      // divide the year is the normal case, not a fault.
+      const issues = calendarMath.calendarIssues(cleaned);
+      if (issues.errors.length) {
+        return res.status(400).json({ error: issues.errors[0].message, errors: issues.errors });
+      }
+      world.calendar = cleaned;
+    }
+  }
+
+  if ('source' in b) {
+    if (b.source === 'builtin')   world.calendarSource = 'builtin';
+    else if (b.source === 'pack') delete world.calendarSource;   // pack is the default
+    else return res.status(400).json({ error: 'Unknown calendar source' });
+  }
+
+  // Display-only, like a hidden category: the calendar still resolves server-side
+  // so stored dates keep validating and never get wiped.
+  if ('hidden' in b) {
+    if (b.hidden === true) world.calendarHidden = true;
+    else delete world.calendarHidden;
+  }
+
+  saveWorlds(worlds);
+  res.json({
+    calendar: resolveWorldCalendar(world),
+    hidden:   world.calendarHidden === true,
+    source:   calendarSourceOf(world),
+  });
+});
+
+// ---- World landing page (§4k) -----------------------------------------------
+
+// PUT /api/worlds/:id/landing — set the world's landing Markdown. `landing` is
+// APP-OWNED: written only here, never via the generic PUT /api/worlds/:id, so a
+// stray body spread can't touch it. We re-read the record from disk and set just
+// this one field, mirroring the backdrop/status handlers.
+app.put('/api/worlds/:id/landing', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const landing = typeof req.body?.landing === 'string' ? req.body.landing.slice(0, LANDING_MAX) : '';
+  const worlds  = getWorlds();
+  const world   = worlds.find(w => w.id === req.params.id);
+  world.landing = landing;
+  saveWorlds(worlds);
+  res.json(world);
+});
+
+// ---- World-level asset store (§4k) ------------------------------------------
+// The §4g lore-asset routes, keyed by worldId ALONE (no entry-existence check —
+// requireWorldOwner is the gate). Same allowlist / magic-sniff / server-token /
+// pinned-Content-Type + nosniff posture. App-origin only.
+
+// GET list — §4.8: member-readable (world/landing images are shown to members).
+app.get('/api/worlds/:id/assets', requireAuth, validId, requireWorldRead, (req, res) => {
+  res.json({ assets: readWorldAssets(req.params.id) });
+});
+
+// POST upload
+app.post('/api/worlds/:id/assets',
+  requireAuth, requireGM, validId, requireWorldOwner, loreAssetUpload.single('file'),
+  (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+    const worldId = req.params.id;
+    const ext = path.extname(req.file.originalname).slice(1).toLowerCase();
+    if (!ATTACH_EXTS.has(ext))             return res.status(415).json({ error: 'File type not allowed' });
+    if (!sniffMagic(ext, req.file.buffer)) return res.status(415).json({ error: "File contents don't match its type" });
+
+    const list = readWorldAssets(worldId);
+    if (list.length >= WORLD_ASSET_MAX) {
+      return res.status(413).json({ error: `Limit of ${WORLD_ASSET_MAX} files per world reached` });
+    }
+    const total = list.reduce((n, a) => n + (a.size || 0), 0);
+    if (total + req.file.size > ATTACH_MAX_TOTAL_BYTES) {
+      return res.status(413).json({ error: 'Storage limit for this world reached' });
+    }
+
+    const sha256 = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+    let key;
+    const used = new Set(list.map(a => a.key));
+    do { key = generateToken(12); } while (used.has(key));
+
+    fs.mkdirSync(worldAssetsDir(worldId), { recursive: true });
+    fs.writeFileSync(worldAssetBlobPath(worldId, key, ext), req.file.buffer);
+
+    const asset = {
+      key,
+      name:       String(req.file.originalname).slice(0, 200),
+      ext,
+      mime:       ATTACH_MIME[ext],
+      size:       req.file.size,
+      sha256,
+      isImage:    LORE_IMAGE_EXTS.has(ext),
+      url:        `/api/worlds/${worldId}/assets/${key}`,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: req.session.user.username,
+    };
+    list.push(asset);
+    writeWorldAssets(worldId, list);
+    res.json({ asset, assets: list });
+  });
+
+// GET one (download / inline view). Content-Type PINNED from our map, nosniff
+// always set, only known-safe types served inline; the rest download.
+// §4.8: member-readable (any world member may fetch a world/landing image).
+app.get('/api/worlds/:id/assets/:key', requireAuth, validId, requireWorldRead, (req, res) => {
+  const key = req.params.key;
+  if (!/^[A-Za-z0-9]{1,40}$/.test(key)) return res.status(400).json({ error: 'Bad key' });
+
+  const asset = readWorldAssets(req.params.id).find(a => a.key === key);
+  if (!asset) return res.status(404).json({ error: 'No such asset' });
+
+  const p = worldAssetBlobPath(req.params.id, asset.key, asset.ext);
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'File missing' });
+
+  const disposition = ATTACH_INLINE.has(asset.ext) ? 'inline' : 'attachment';
+  res.setHeader('Content-Type', ATTACH_MIME[asset.ext] || 'application/octet-stream');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', `${disposition}; ${dispositionFilename(asset.name)}`);
+  res.setHeader('Content-Length', asset.size);
+  const stream = fs.createReadStream(p);
+  stream.on('error', () => { if (!res.headersSent) res.status(500).end(); else res.destroy(); });
+  stream.pipe(res);
+});
+
+// DELETE one — owner-only. Removes blob + manifest entry. (A landing body that
+// still references a deleted image renders a broken <img>, same honest behaviour
+// as a dangling [[wiki]] link — we don't rewrite the author's text.)
+app.delete('/api/worlds/:id/assets/:key', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const key = req.params.key;
+  if (!/^[A-Za-z0-9]{1,40}$/.test(key)) return res.status(400).json({ error: 'Bad key' });
+
+  const list  = readWorldAssets(req.params.id);
+  const asset = list.find(a => a.key === key);
+  if (!asset) return res.status(404).json({ error: 'No such asset' });
+
+  const p = worldAssetBlobPath(req.params.id, asset.key, asset.ext);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+  const next = list.filter(a => a.key !== key);
+  writeWorldAssets(req.params.id, next);
+  res.json({ ok: true, assets: next });
+});
+
+// Validate + normalize an entry's field values before store (§4.11). Only
+// calendar-date fields need work: each must be a valid { era, year, month, day }
+// (or null) for the world's calendar. Non-date fields pass through untouched.
+// Returns { fields } on success or { error } on an invalid date. If the pack has
+// NO calendar, a declared date field degrades to null (dropped + logged) rather
+// than erroring — the entry form must keep working with no calendar.
+function sanitizeEntryFields(fields, categoryDef, calendar) {
+  const src = fields && typeof fields === 'object' && !Array.isArray(fields) ? fields : {};
+  if (!categoryDef) return { fields: src };
+  const out = { ...src };
+  for (const f of categoryDef.fields || []) {
+    if (f.type !== 'calendar-date' || !(f.key in out)) continue;
+    const raw = out[f.key];
+    if (raw == null) { out[f.key] = null; continue; }
+    if (!calendar) {
+      console.warn(`[calendar] field '${f.key}' ignored — pack has no calendar`);
+      out[f.key] = null;
+      continue;
+    }
+    const v = calendarMath.validateDate(calendar, raw);
+    if (!v.ok) return { error: `${f.label || f.key}: ${v.error}` };
+    out[f.key] = v.value;
+  }
+  return { fields: out };
+}
+
+// ---- Lore entries -----------------------------------------------------------
+
+// GET /api/worlds/:id/lore?category=<catId> — list entries (optionally filtered).
+// List reads must NOT drag in history sidecars — they have an extra dot in the
+// stem (`${id}.history.json`), so filtering to plain `${id}.json` skips them.
+// §4.8: readable by members, FILTERED by canSee against the viewer's role — an
+// entry above their tier (or any `hidden` one) never appears, not even its name,
+// so wiki-resolution and broken-links stay correct for that member. Non-owners
+// additionally get every fog-capable field stripped of ||GM-only|| spans.
+app.get('/api/worlds/:id/lore', requireAuth, validId, requireWorldRead, (req, res) => {
+  const dir = loreDir(req.params.id);
+  if (!fs.existsSync(dir)) return res.json([]);
+  const category = req.query.category;
+  const role = req.worldRole;
+  const categories = packs.loadCategories(DATA_DIR, req.world.packId);
+  const entries = [];
+  for (const file of fs.readdirSync(dir)) {
+    // Plain entry files only: `${id}.json` where the stem has no extra dot.
+    // The extra-dot sidecars (`.history.json`, `.proposals.json`, `.assets.json`)
+    // are already excluded by the no-dot stem regex; the explicit guards are
+    // belt-and-suspenders so a scan never leaks a sidecar as an "entry".
+    if (!/^[a-z0-9-]+\.json$/i.test(file)) continue;
+    if (file.endsWith('.history.json') || file.endsWith('.proposals.json')) continue;
+    try {
+      const entry = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+      if (category && entry.categoryId !== category) continue;
+      if (!canSee(role, entry.visibility)) continue;          // never serialize what the role can't see
+      entries.push(serializeEntryForRole(entry, role, categories));
+    } catch (e) {
+      console.error(`[lore] Skipping unreadable ${file}: ${e.message}`);
+    }
+  }
+  entries.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  res.json(entries);
+});
+
+// POST /api/worlds/:id/lore — create. Server owns id, worldId, createdBy, times.
+// Open to owner + coGM (requireWorldWrite). New entries default to `hidden`:
+// sharing is a deliberate act, and fog means a shared entry can still hold secrets.
+app.post('/api/worlds/:id/lore', requireAuth, validId, requireWorldWrite, (req, res) => {
+  const b = req.body || {};
+  const categoryId = typeof b.categoryId === 'string' ? b.categoryId : '';
+  const name       = typeof b.name === 'string' ? b.name.trim() : '';
+  if (!categoryId) return res.status(400).json({ error: 'categoryId required' });
+  if (!name)       return res.status(400).json({ error: 'Name required' });
+
+  // categoryId must be one the world's pack actually declares.
+  const categories = packs.loadCategories(DATA_DIR, req.world.packId);
+  const categoryDef = categories.find(c => c.id === categoryId);
+  if (!categoryDef) {
+    return res.status(400).json({ error: 'Unknown category' });
+  }
+
+  // §4.11: validate/normalize calendar-date fields against the world's calendar.
+  const calendar = resolveWorldCalendar(req.world);
+  const sane = sanitizeEntryFields(b.fields, categoryDef, calendar);
+  if (sane.error) return res.status(400).json({ error: sane.error });
+
+  const now = new Date().toISOString();
+  const entry = {
+    id:         newRecordId(name),
+    worldId:    req.params.id,
+    categoryId,
+    name:       name.slice(0, 200),
+    fields:     sane.fields,
+    // Only GMs reach this route and both states are legal for both GM roles, so
+    // there is no role clamp left — just validate. Junk fails closed anyway
+    // (canSee returns false for anything that isn't 'shared'), but keep it clean.
+    visibility: VISIBILITY_STATES.includes(b.visibility) ? b.visibility : DEFAULT_VISIBILITY,
+    createdBy:  req.session.user.username,
+    createdAt:  now,
+    updatedAt:  now,
+  };
+  fs.mkdirSync(loreDir(req.params.id), { recursive: true });
+  fs.writeFileSync(lorePath(req.params.id, entry.id), JSON.stringify(entry, null, 2));
+  res.json(entry);
+});
+
+// GET /api/worlds/:id/lore/:entryId — read one. §4.8: readable by members, but
+// 404 if the viewer's role can't see it (same not-found response as a missing
+// entry — never confirm an over-tier/hidden entry exists). Fog-stripped for
+// non-owners.
+app.get('/api/worlds/:id/lore/:entryId', requireAuth, validId, requireWorldRead, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const entry = readLoreEntry(req.params.id, req.params.entryId);
+  if (!entry || !canSee(req.worldRole, entry.visibility)) return res.status(404).json({ error: 'Not found' });
+  const categories = packs.loadCategories(DATA_DIR, req.world.packId);
+  res.json(serializeEntryForRole(entry, req.worldRole, categories));
+});
+
+// PUT /api/worlds/:id/lore/:entryId — update name/fields/visibility. Appends the
+// PRE-edit snapshot to history first, so the newest history version always
+// reflects a prior saved state and the current file is the live one.
+// Open to owner + coGM (requireWorldWrite), and only for an entry they canSee
+// (404 otherwise — never confirm a hidden entry exists). The snapshot records the
+// EDITING user (session identity), so history shows who changed what. Both GM
+// roles receive raw fog (seesRawFog), so an edit round-trip is lossless — they
+// cannot erase ||fog|| that was never stripped for them. This is why no non-GM
+// tier may write directly: a proposer's base IS fog-stripped, so their edits go
+// through the proposal queue for a sighted GM to merge.
+app.put('/api/worlds/:id/lore/:entryId', requireAuth, validId, requireWorldWrite, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const entry = readLoreEntry(req.params.id, req.params.entryId);
+  if (!entry || !canSee(req.worldRole, entry.visibility)) return res.status(404).json({ error: 'Not found' });
+
+  const b = req.body || {};
+
+  // §4.11: validate calendar-date fields BEFORE snapshotting/mutating, so an
+  // invalid date is a clean 400 that leaves no spurious history version behind.
+  let nextFields = null;
+  if (b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields)) {
+    const categories  = packs.loadCategories(DATA_DIR, req.world.packId);
+    const categoryDef = categories.find(c => c.id === entry.categoryId);
+    const calendar    = resolveWorldCalendar(req.world);
+    const sane = sanitizeEntryFields(b.fields, categoryDef, calendar);
+    if (sane.error) return res.status(400).json({ error: sane.error });
+    nextFields = sane.fields;
+  }
+
+  // Snapshot the current (pre-edit) state before mutating, attributed to the editor.
+  appendLoreHistory(req.params.id, entry, req.session.user.username, 'edit');
+
+  if (typeof b.name === 'string' && b.name.trim()) entry.name = b.name.trim().slice(0, 200);
+  if (nextFields) entry.fields = nextFields;
+  // Invalid values are ignored, leaving the current visibility untouched (the old
+  // clamp's behaviour). No role clamp: only GMs reach here and both states are theirs.
+  if (b.visibility !== undefined && VISIBILITY_STATES.includes(b.visibility)) entry.visibility = b.visibility;
+  entry.updatedAt = new Date().toISOString();
+  // app-owned fields (id, worldId, categoryId, createdBy, createdAt) untouched.
+
+  fs.writeFileSync(lorePath(req.params.id, entry.id), JSON.stringify(entry, null, 2));
+  res.json(entry);
+});
+
+// DELETE /api/worlds/:id/lore/:entryId — remove entry + its history sidecar.
+app.delete('/api/worlds/:id/lore/:entryId', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const p = lorePath(req.params.id, req.params.entryId);
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'Not found' });
+  fs.rmSync(p, { force: true });
+  const hp = loreHistoryPath(req.params.id, req.params.entryId);
+  if (fs.existsSync(hp)) fs.rmSync(hp, { force: true });
+  const pp = loreProposalsPath(req.params.id, req.params.entryId);
+  if (fs.existsSync(pp)) fs.rmSync(pp, { force: true });   // §4.9: sweep proposals too
+  removeLoreAssets(req.params.id, req.params.entryId);  // blobs + assets manifest
+  res.json({ ok: true });
+});
+
+// GET /api/worlds/:id/lore/:entryId/history — the version list (newest last).
+app.get('/api/worlds/:id/lore/:entryId/history', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  if (!readLoreEntry(req.params.id, req.params.entryId)) return res.status(404).json({ error: 'Not found' });
+  res.json(readLoreHistory(req.params.id, req.params.entryId));
+});
+
+// POST /api/worlds/:id/lore/:entryId/restore  body: { index }
+// Non-destructive: first snapshot the CURRENT state into history, then write the
+// chosen version's body as current — so a restore is itself undoable.
+app.post('/api/worlds/:id/lore/:entryId/restore', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const entry = readLoreEntry(req.params.id, req.params.entryId);
+  if (!entry) return res.status(404).json({ error: 'Not found' });
+
+  const history = readLoreHistory(req.params.id, req.params.entryId);
+  const index = Number(req.body?.index);
+  if (!Number.isInteger(index) || index < 0 || index >= history.versions.length) {
+    return res.status(400).json({ error: 'Invalid version index' });
+  }
+
+  // Snapshot current state so the restore can itself be undone.
+  appendLoreHistory(req.params.id, entry, req.session.user.username, 'restore');
+
+  const snap = history.versions[index].body;
+  entry.name       = snap.name;
+  entry.fields     = snap.fields || {};
+  entry.visibility = VISIBILITY_STATES.includes(snap.visibility) ? snap.visibility : entry.visibility;
+  entry.updatedAt  = new Date().toISOString();
+  fs.writeFileSync(lorePath(req.params.id, entry.id), JSON.stringify(entry, null, 2));
+  res.json(entry);
+});
+
+// ---- Proposals (§4.9 — propose tier: suggested edits, GM-approved) ----------
+// A proposal is a suggested set of field/name values a member submits WITHOUT
+// touching the entry. The owner reviews the queue and approves (applies through
+// the normal update path, so history records the pre-edit snapshot) or rejects.
+// Because a proposer's base was fog-stripped, approval is a SIGHTED act — the GM's
+// UI shows the proposal against the raw entry and may edit before approving; the
+// approve route accepts the GM's (possibly edited) name/fields, never a blind copy.
+const PROPOSAL_ID_RE = /^[A-Za-z0-9]{1,40}$/;
+
+// POST propose — owner/write/propose may submit (a `read` member may not); requires
+// canSee on the entry. Never mutates the entry. Identity from session.
+app.post('/api/worlds/:id/lore/:entryId/proposals', requireAuth, validId, requireWorldRead, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  if (req.worldRole === 'read') return res.status(403).json({ error: 'Read access cannot propose edits' });
+  const entry = readLoreEntry(req.params.id, req.params.entryId);
+  if (!entry || !canSee(req.worldRole, entry.visibility)) return res.status(404).json({ error: 'Not found' });
+
+  const b = req.body || {};
+  const fields = (b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields)) ? b.fields : {};
+  const proposal = {
+    id:         generateToken(12),
+    entryId:    entry.id,
+    proposedBy: req.session.user.username,        // session identity, never the body
+    proposedAt: new Date().toISOString(),
+    name:       typeof b.name === 'string' && b.name.trim() ? b.name.trim().slice(0, 200) : entry.name,
+    fields,
+    note:       typeof b.note === 'string' ? b.note.slice(0, 1000) : '',
+    status:     'pending',
+    resolvedBy: null,
+    resolvedAt: null,
+  };
+  const store = readLoreProposals(req.params.id, entry.id);
+  store.proposals.push(proposal);
+  writeLoreProposals(req.params.id, entry.id, store);
+  res.json(proposal);
+});
+
+// GET per-entry proposals — the owner sees ALL; anyone else sees only their OWN.
+app.get('/api/worlds/:id/lore/:entryId/proposals', requireAuth, validId, requireWorldRead, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const entry = readLoreEntry(req.params.id, req.params.entryId);
+  if (!entry || !canSee(req.worldRole, entry.visibility)) return res.status(404).json({ error: 'Not found' });
+  const all = readLoreProposals(req.params.id, entry.id).proposals;
+  const mine = req.worldRole === 'owner'
+    ? all
+    : all.filter(p => p.proposedBy === req.session.user.username);
+  res.json({ proposals: mine });
+});
+
+// GET the world-wide PENDING queue — owner-only (the GM's review list). Scans the
+// per-entry proposal sidecars and enriches each pending item with its entry name.
+app.get('/api/worlds/:id/proposals', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const dir = loreDir(req.params.id);
+  if (!fs.existsSync(dir)) return res.json({ proposals: [] });
+  const out = [];
+  for (const file of fs.readdirSync(dir)) {
+    if (!file.endsWith('.proposals.json')) continue;
+    const entryId = file.slice(0, -('.proposals.json'.length));
+    if (!safeId(entryId)) continue;
+    const entry = readLoreEntry(req.params.id, entryId);
+    const entryName = entry ? entry.name : '(deleted entry)';
+    for (const p of readLoreProposals(req.params.id, entryId).proposals) {
+      if (p.status !== 'pending') continue;
+      out.push({ ...p, entryName });
+    }
+  }
+  out.sort((a, b) => (a.proposedAt || '').localeCompare(b.proposedAt || ''));
+  res.json({ proposals: out });
+});
+
+// POST approve — owner-only. Applies the proposal's (or the GM's edited) name +
+// fields to the entry through the normal update path: pre-edit snapshot to history
+// attributed to the approving GM with the proposer noted, then mark approved. A
+// proposal already resolved returns 409 rather than re-applying (idempotent-safe).
+app.post('/api/worlds/:id/lore/:entryId/proposals/:proposalId/approve', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  if (!PROPOSAL_ID_RE.test(req.params.proposalId)) return res.status(400).json({ error: 'Bad proposal id' });
+  const entry = readLoreEntry(req.params.id, req.params.entryId);
+  if (!entry) return res.status(404).json({ error: 'Not found' });
+
+  const store = readLoreProposals(req.params.id, req.params.entryId);
+  const p = store.proposals.find(x => x.id === req.params.proposalId);
+  if (!p) return res.status(404).json({ error: 'No such proposal' });
+  if (p.status !== 'pending') return res.status(409).json({ error: 'Proposal already resolved' });
+
+  // Apply the GM's reviewed values if supplied (sighted approve — the GM may have
+  // edited to re-inject fog), else the proposal's stored values. Never the raw body
+  // for app-owned fields; visibility/id/timestamps are not the proposer's to set.
+  const b = req.body || {};
+  const name   = typeof b.name === 'string' && b.name.trim() ? b.name.trim()
+               : (typeof p.name === 'string' && p.name.trim() ? p.name.trim() : entry.name);
+  const fields = (b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields)) ? b.fields
+               : (p.fields && typeof p.fields === 'object' && !Array.isArray(p.fields) ? p.fields : entry.fields);
+
+  // §4.11: an approved proposal lands through the SAME calendar-date validation as
+  // a direct edit — a bad date can't sneak in via approval. Checked BEFORE the
+  // history snapshot so a rejection leaves no spurious version.
+  const categories  = packs.loadCategories(DATA_DIR, req.world.packId);
+  const categoryDef = categories.find(c => c.id === entry.categoryId);
+  const calendar    = resolveWorldCalendar(req.world);
+  const sane = sanitizeEntryFields(fields, categoryDef, calendar);
+  if (sane.error) return res.status(400).json({ error: sane.error });
+
+  // Snapshot the current (pre-edit) state, attributed to the approving GM.
+  appendLoreHistory(req.params.id, entry, req.session.user.username, `approve (from ${p.proposedBy})`);
+
+  entry.name      = String(name).slice(0, 200);
+  entry.fields    = sane.fields;
+  entry.updatedAt = new Date().toISOString();
+  fs.writeFileSync(lorePath(req.params.id, entry.id), JSON.stringify(entry, null, 2));
+
+  p.status     = 'approved';
+  p.resolvedBy = req.session.user.username;
+  p.resolvedAt = new Date().toISOString();
+  writeLoreProposals(req.params.id, req.params.entryId, store);
+  res.json({ ok: true, entry, proposal: p });
+});
+
+// POST reject — owner-only. Marks the proposal rejected; never touches the entry.
+app.post('/api/worlds/:id/lore/:entryId/proposals/:proposalId/reject', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  if (!PROPOSAL_ID_RE.test(req.params.proposalId)) return res.status(400).json({ error: 'Bad proposal id' });
+
+  const store = readLoreProposals(req.params.id, req.params.entryId);
+  const p = store.proposals.find(x => x.id === req.params.proposalId);
+  if (!p) return res.status(404).json({ error: 'No such proposal' });
+  if (p.status !== 'pending') return res.status(409).json({ error: 'Proposal already resolved' });
+
+  p.status     = 'rejected';
+  p.resolvedBy = req.session.user.username;
+  p.resolvedAt = new Date().toISOString();
+  writeLoreProposals(req.params.id, req.params.entryId, store);
+  res.json({ ok: true, proposal: p });
+});
+
+// ---- Per-entry lore assets (inline images + attachments) --------------------
+// All routes carry the full lore auth chain (requireAuth + requireGM + validId +
+// requireWorldOwner) PLUS a safeId check on :entryId, mirroring the other
+// /lore/:entryId routes. The entry must exist before we touch its asset store.
+
+// GET list
+app.get('/api/worlds/:id/lore/:entryId/assets', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  if (!readLoreEntry(req.params.id, req.params.entryId)) return res.status(404).json({ error: 'Not found' });
+  res.json({ assets: readLoreAssets(req.params.id, req.params.entryId) });
+});
+
+// POST upload — allowlist + magic-byte checked, count/size capped, blob written
+// under a server token (the original filename is metadata only).
+app.post('/api/worlds/:id/lore/:entryId/assets',
+  requireAuth, requireGM, validId, requireWorldOwner, loreAssetUpload.single('file'),
+  (req, res) => {
+    if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+    if (!readLoreEntry(req.params.id, req.params.entryId)) return res.status(404).json({ error: 'Not found' });
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+
+    const worldId = req.params.id, entryId = req.params.entryId;
+    const ext = path.extname(req.file.originalname).slice(1).toLowerCase();
+    if (!ATTACH_EXTS.has(ext))             return res.status(415).json({ error: 'File type not allowed' });
+    if (!sniffMagic(ext, req.file.buffer)) return res.status(415).json({ error: "File contents don't match its type" });
+
+    const list = readLoreAssets(worldId, entryId);
+    if (list.length >= LORE_ASSET_MAX_PER_ENTRY) {
+      return res.status(413).json({ error: `Limit of ${LORE_ASSET_MAX_PER_ENTRY} files per entry reached` });
+    }
+    const total = list.reduce((n, a) => n + (a.size || 0), 0);
+    if (total + req.file.size > ATTACH_MAX_TOTAL_BYTES) {
+      return res.status(413).json({ error: 'Storage limit for this entry reached' });
+    }
+
+    const sha256 = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+    let key;
+    const used = new Set(list.map(a => a.key));
+    do { key = generateToken(12); } while (used.has(key));
+
+    fs.mkdirSync(loreDir(worldId), { recursive: true });
+    fs.writeFileSync(loreAssetBlobPath(worldId, entryId, key, ext), req.file.buffer);
+
+    const asset = {
+      key,
+      name:       String(req.file.originalname).slice(0, 200),
+      ext,
+      mime:       ATTACH_MIME[ext],
+      size:       req.file.size,
+      sha256,
+      isImage:    LORE_IMAGE_EXTS.has(ext),
+      url:        `/api/worlds/${worldId}/lore/${entryId}/assets/${key}`,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: req.session.user.username,
+    };
+    list.push(asset);
+    writeLoreAssets(worldId, entryId, list);
+    res.json({ asset, assets: list });
+  });
+
+// GET one (download / inline view). Content-Type is PINNED from our map, nosniff
+// is always set, and only known-safe types are served inline; the rest download.
+// §4.8: member-readable, but re-checked — a member may fetch a lore asset ONLY if
+// they canSee the OWNING entry (assets are entryId-scoped). An over-tier/hidden
+// entry's images 404 for that member, same as the entry itself.
+app.get('/api/worlds/:id/lore/:entryId/assets/:key', requireAuth, validId, requireWorldRead, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const key = req.params.key;
+  if (!/^[A-Za-z0-9]{1,40}$/.test(key)) return res.status(400).json({ error: 'Bad key' });
+
+  const entry = readLoreEntry(req.params.id, req.params.entryId);
+  if (!entry || !canSee(req.worldRole, entry.visibility)) return res.status(404).json({ error: 'Not found' });
+
+  const asset = readLoreAssets(req.params.id, req.params.entryId).find(a => a.key === key);
+  if (!asset) return res.status(404).json({ error: 'No such asset' });
+
+  const p = loreAssetBlobPath(req.params.id, req.params.entryId, asset.key, asset.ext);
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'File missing' });
+
+  const disposition = ATTACH_INLINE.has(asset.ext) ? 'inline' : 'attachment';
+  res.setHeader('Content-Type', ATTACH_MIME[asset.ext] || 'application/octet-stream');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', `${disposition}; ${dispositionFilename(asset.name)}`);
+  res.setHeader('Content-Length', asset.size);
+  const stream = fs.createReadStream(p);
+  stream.on('error', () => { if (!res.headersSent) res.status(500).end(); else res.destroy(); });
+  stream.pipe(res);
+});
+
+// DELETE one — owner-only. Removes blob + manifest entry. (A body that still
+// references a deleted image renders a broken <img>, which is honest, same as a
+// dangling [[wiki]] link — we don't rewrite the author's text behind their back.)
+app.delete('/api/worlds/:id/lore/:entryId/assets/:key', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const key = req.params.key;
+  if (!/^[A-Za-z0-9]{1,40}$/.test(key)) return res.status(400).json({ error: 'Bad key' });
+
+  const list  = readLoreAssets(req.params.id, req.params.entryId);
+  const asset = list.find(a => a.key === key);
+  if (!asset) return res.status(404).json({ error: 'No such asset' });
+
+  const p = loreAssetBlobPath(req.params.id, req.params.entryId, asset.key, asset.ext);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+  const next = list.filter(a => a.key !== key);
+  writeLoreAssets(req.params.id, req.params.entryId, next);
+  res.json({ ok: true, assets: next });
 });
 
 // Values that identify a GM's campaigns — internal id AND join code,
@@ -2300,6 +4473,28 @@ app.post('/api/characters/:id/campaign/join', requireAuth, validId, (req, res) =
   char.updatedAt    = new Date().toISOString();
   writeCharSplit(existing.username, req.params.id, char);
 
+  // §4.7 auto-grant: if the joined campaign belongs to a world, the CHARACTER'S
+  // OWNER gains world access. Upsert them into the world's members ledger at
+  // `read` ONLY IF ABSENT — never downgrade an existing higher tier, so this is
+  // idempotent and re-joining can't undo a promotion. The owner is read from the
+  // character (existing.username), never the request body. This is GM-side
+  // plumbing only: the member still can't OPEN the world until §4.8.
+  if (match.worldId) {
+    const worlds = getWorlds();
+    const world  = worlds.find(w => w.id === match.worldId);
+    if (world && world.ownedBy !== existing.username) {   // the owner is never a member of their own world
+      if (!world.members || typeof world.members !== 'object') world.members = {};
+      if (!world.members[existing.username]) {
+        world.members[existing.username] = {
+          tier:       'read',
+          grantedAt:  new Date().toISOString(),
+          grantedVia: match.id,
+        };
+        saveWorlds(worlds);
+      }
+    }
+  }
+
   res.json({ id, campaignId: match.id, campaignName: match.name });
 });
 
@@ -2349,12 +4544,22 @@ app.get('*', (req, res) => {
 // ---------------------------------------------------------------------------
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  // Multer signals oversize/too-many-files via a MulterError — that's a client
+  // mistake (413/400), not a server fault, so don't let it fall through to a
+  // misleading 500. Its .code (e.g. LIMIT_FILE_SIZE) is safe, non-sensitive.
+  if (err instanceof multer.MulterError) {
+    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    return res.status(status).json({ error: `Upload rejected: ${err.code}` });
+  }
   console.error(err);
   const isProd = process.env.NODE_ENV === 'production';
   res.status(err.status || 500).json({
     error: isProd ? 'Internal server error' : (err.message || 'Internal server error'),
   });
 });
+
+// Migrate BEFORE binding the port: no request may observe half-migrated data.
+migrateWorldModel();
 
 const server = app.listen(PORT, () => console.log(`Server on ${PORT}`));
 

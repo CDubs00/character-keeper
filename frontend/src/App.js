@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import CharacterList from './components/shared/CharacterList';
 import CharacterSheet from './components/CharacterSheet';
+import Worlds from './components/shared/Worlds';
+import WorldDetail from './components/shared/WorldDetail';
 import Login from './components/shared/Login';
 import Setup from './components/shared/Setup';
 import ShareView from './components/shared/ShareView';
@@ -22,6 +24,12 @@ function SheetRoute({ user, onLogout }) {
       user={user}
     />
   );
+}
+
+function WorldDetailRoute({ user }) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  return <WorldDetail user={user} worldId={id} onBack={() => navigate('/worlds')} />;
 }
 
 function AppRoutes({ user, setUser, needsSetup, setNeedsSetup }) {
@@ -54,12 +62,33 @@ function AppRoutes({ user, setUser, needsSetup, setNeedsSetup }) {
       } />
       <Route path="/characters" element={
         <RequireAuth user={user}>
-          <CharacterList onSelect={openSheet} onNew={openSheet} user={user} onUser={setUser} onLogout={logout} />
+          <CharacterList
+            onSelect={openSheet}
+            onNew={openSheet}
+            user={user}
+            onUser={setUser}
+            onLogout={logout}
+            onWorlds={() => navigate('/worlds')}
+          />
         </RequireAuth>
       } />
       <Route path="/characters/:id" element={
         <RequireAuth user={user}>
           <SheetRoute user={user} />
+        </RequireAuth>
+      } />
+      {/* §4.8: worlds are no longer GM-only — a non-GM player who's a ledger
+          MEMBER of a world reaches it read-only here. The server is the gate
+          (GET /api/worlds returns only worlds you own or belong to; the detail
+          view renders off the role it returns), so route auth is just RequireAuth. */}
+      <Route path="/worlds" element={
+        <RequireAuth user={user}>
+          <Worlds user={user} onBack={() => navigate('/characters')} onOpenWorld={(id) => navigate(`/worlds/${id}`)} />
+        </RequireAuth>
+      } />
+      <Route path="/worlds/:id" element={
+        <RequireAuth user={user}>
+          <WorldDetailRoute user={user} />
         </RequireAuth>
       } />
       <Route path="/share/:token" element={<ShareView />} />

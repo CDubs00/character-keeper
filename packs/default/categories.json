@@ -1,0 +1,102 @@
+[
+  {
+    "id": "locations",
+    "label": "Locations",
+    "icon": "map-pin",
+    "fields": [
+      {
+        "key": "subtitle",
+        "label": "Subtitle",
+        "type": "text"
+      },
+      {
+        "key": "body",
+        "label": "Description",
+        "type": "textarea",
+        "fog": true
+      }
+    ]
+  },
+  {
+    "id": "npcs",
+    "label": "NPCs",
+    "icon": "user",
+    "fields": [
+      {
+        "key": "subtitle",
+        "label": "Subtitle",
+        "type": "text"
+      },
+      {
+        "key": "body",
+        "label": "Description",
+        "type": "textarea",
+        "fog": true
+      }
+    ]
+  },
+  {
+    "id": "factions",
+    "label": "Factions",
+    "icon": "flag",
+    "fields": [
+      {
+        "key": "subtitle",
+        "label": "Subtitle",
+        "type": "text"
+      },
+      {
+        "key": "body",
+        "label": "Description",
+        "type": "textarea",
+        "fog": true
+      }
+    ]
+  },
+  {
+    "id": "deities",
+    "label": "Deities",
+    "icon": "star",
+    "fields": [
+      {
+        "key": "subtitle",
+        "label": "Subtitle",
+        "type": "text"
+      },
+      {
+        "key": "body",
+        "label": "Description",
+        "type": "textarea",
+        "fog": true
+      }
+    ]
+  },
+  {
+    "id": "events",
+    "label": "Events",
+    "icon": "calendar",
+    "fields": [
+      {
+        "key": "subtitle",
+        "label": "Subtitle",
+        "type": "text"
+      },
+      {
+        "key": "start",
+        "label": "Start date",
+        "type": "calendar-date"
+      },
+      {
+        "key": "end",
+        "label": "End date",
+        "type": "calendar-date"
+      },
+      {
+        "key": "body",
+        "label": "Description",
+        "type": "textarea",
+        "fog": true
+      }
+    ]
+  }
+]

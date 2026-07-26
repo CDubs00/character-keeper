@@ -3,6 +3,7 @@ const path     = require('path');
 const bcrypt   = require('bcrypt');
 const readline = require('readline');
 const { validateUsername } = require('./validateUsername');
+const { passwordError }     = require('./validatePassword');
 
 const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -42,12 +43,16 @@ async function main() {
   }
 
   const password = await promptPassword();
-  if (!password) {
-    console.log('Password cannot be empty');
+  // Enforce the SAME password policy the API uses (shared validatePassword.js),
+  // so an account made from the CLI can't be weaker than one made in the app.
+  const pwErr = passwordError(password);
+  if (pwErr) {
+    console.log(pwErr);
     process.exit(1);
   }
 
-  const hashed = await bcrypt.hash(password, 10);
+  // Keep in sync with BCRYPT_COST in server.js (OWASP-recommended work factor).
+  const hashed = await bcrypt.hash(password, 12);
   users.push({
     username,
     password:     hashed,

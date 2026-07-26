@@ -1,6 +1,6 @@
 {
-  "name": "Character Keeper",
-  "short_name": "Keeper",
+  "name": "Keep",
+  "short_name": "Keep",
   "description": "Self-hosted TTRPG character sheet web app.",
   "start_url": ".",
   "scope": ".",

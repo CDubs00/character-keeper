@@ -9,6 +9,16 @@
 
 @font-face { font-family:'Share Tech Mono'; font-style:normal; font-weight:400; font-display:swap; src:url('./fonts/share-tech-mono-v16-latin-regular.woff2') format('woff2'); }
 
+/* Themed display faces — declared once here, activated per-theme via the font
+   vars in theme.js. A face the active theme doesn't reference is never fetched,
+   so parking these costs nothing until selected. TTF works; converting to woff2
+   (like the faces above) roughly halves each download. */
+@font-face { font-family:'Cyberpunks'; font-style:normal; font-weight:400; font-display:swap; src:url('./fonts/cyberpunks-regular.ttf') format('truetype'); }
+@font-face { font-family:'Orbitron';   font-style:normal; font-weight:400; font-display:swap; src:url('./fonts/orbitron-regular.ttf')   format('truetype'); }
+@font-face { font-family:'Orbitron';   font-style:normal; font-weight:700; font-display:swap; src:url('./fonts/orbitron-700.ttf')       format('truetype'); }
+@font-face { font-family:'Rye';        font-style:normal; font-weight:400; font-display:swap; src:url('./fonts/rye-regular.ttf')         format('truetype'); }
+@font-face { font-family:'Smokum';     font-style:normal; font-weight:400; font-display:swap; src:url('./fonts/smokum-regular.ttf')      format('truetype'); }
+
 :root {
   --bg-deep:      #0e0d0b;
   --bg-surface:   #161410;
@@ -22,6 +32,12 @@
   --red:          #c84040;
   --red-dim:      #7a2020;
   --green:        #5a8a50;
+  /* Semantic status tokens — used by Keep's lore visibility pills so they
+     recolor consistently instead of each pill inventing a color. Defined once
+     here in :root; every theme inherits them (all dark-palette safe). */
+  --positive:     #5a8a50;
+  --neutral:      #6a5e48;
+  --danger:       #c84040;
   --text-primary: #e8e0cc;
   --text-secondary:#a09070;
   --text-dim:     #6a5e48;
@@ -35,7 +51,15 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { font-size: 17px; }
+html {
+  font-size: 17px;
+  /* Reserve the scrollbar gutter ALWAYS, so a page that scrolls (long character
+     list) and one that doesn't (short worlds list) have the same content width —
+     otherwise the centered `margin: 0 auto` containers shift sideways by the
+     scrollbar width when navigating between routes of different heights (§4.10).
+     Root fix, not a magic offset. */
+  scrollbar-gutter: stable;
+}
 
 body {
   background: var(--bg-deep);
@@ -688,3 +712,157 @@ label {
   transition: opacity 0.15s;
 }
 .sheet-root .cf-md-toggle:hover { opacity: 1; }
+
+/* ---------------------------------------------------------------------------
+   Keep — world backdrop (CLAUDE.md 4f)
+
+   A per-world image sits FIXED behind the lore panels. It's muted "by
+   construction": a themed scrim (the page bg colour at partial opacity) tones
+   ANY image down to a faint tint, so a bright map and a dark one both settle to
+   the same subtle backdrop — there is no user opacity control by design. Because
+   the scrim is a theme variable it recolours with the active theme and stays
+   correct on a future light theme too.
+
+   The panels above it become frosted glass: a semi-opaque themed surface + a
+   modest blur, so text contrast never rides on the image. backdrop-filter is the
+   one costly piece and is treated as a BONUS — the @supports fallback (and the
+   plain solid `background` that precedes the color-mix one, for engines without
+   color-mix) drop panels back to a solid themed surface, never an unreadable one.
+--------------------------------------------------------------------------- */
+.keep-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.keep-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--bg-deep);
+  opacity: 0.82;               /* the muting layer — high enough to guarantee subtlety */
+}
+.keep-glass {
+  background: var(--bg-surface);                                   /* fallback: no color-mix */
+  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+/* No blur support → fall back to the solid themed surface (contrast never
+   depends on the image). */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .keep-glass { background: var(--bg-surface); }
+}
+
+/* ---------------------------------------------------------------------------
+   .keep-fade — the restrained view-switch transition for the world detail
+   (§4m). A React `key` change remounts the wrapped panel content, replaying this
+   gentle opacity + few-px rise (reusing the fadeInUp ethos, just shorter/smaller
+   — no bounce, no layout slide). Opacity/transform only, so it never reflows the
+   page. Gated below: reduced-motion users get an instant swap.
+--------------------------------------------------------------------------- */
+.keep-fade { animation: keepFadeIn 180ms ease; }
+@keyframes keepFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .keep-fade { animation: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   Shared modal shell (§4.10) — one set of classes so every world modal behaves
+   identically: the OVERLAY is a fixed, viewport-height flex centering box; the
+   PANEL is capped in height and lays out as a column; only the BODY scrolls, so
+   there's never a scrollbar on the outer panel nor a nested double-scroll. The
+   header/footer stay put; `overscroll-behavior: contain` stops a scroll at the
+   body's edge from chaining to the page behind.
+--------------------------------------------------------------------------- */
+.keep-modal-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem; background: rgba(0, 0, 0, 0.6);
+}
+.keep-modal {
+  display: flex; flex-direction: column;
+  width: 100%; max-height: min(85vh, 900px);
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 3px; overflow: hidden;          /* the panel itself never scrolls */
+}
+.keep-modal-header, .keep-modal-footer { flex: 0 0 auto; }
+.keep-modal-body {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+}
+
+/* ---------------------------------------------------------------------------
+   .lore-md — markdown-rendered lore bodies (react-markdown output).
+   Scoped so an entry's headings/lists/code recolor with the active theme and a
+   `#` heading can't dwarf the entry title. Theme variables only — no hardcoded
+   colors. Block margins are collapsed at the edges so a body sits flush in its
+   field. Fog chips and wiki-link spans are styled inline in WorldDetail.jsx.
+--------------------------------------------------------------------------- */
+.lore-md {
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  line-height: 1.55;
+}
+.lore-md > :first-child { margin-top: 0; }
+.lore-md > :last-child  { margin-bottom: 0; }
+/* Contain floated (left/right-aligned) inline images so they can't overlap the
+   following fields or the Edit/Delete row. */
+.lore-md::after { content: ''; display: block; clear: both; }
+.lore-md p { margin: 0 0 0.7rem; }
+.lore-md h1, .lore-md h2, .lore-md h3, .lore-md h4 {
+  color: var(--text-accent);
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  margin: 1rem 0 0.5rem;
+}
+.lore-md h1 { font-size: 1.3rem; }
+.lore-md h2 { font-size: 1.15rem; }
+.lore-md h3 { font-size: 1.02rem; }
+.lore-md h4 { font-size: 0.92rem; }
+.lore-md ul, .lore-md ol { margin: 0 0 0.7rem; padding-left: 1.4rem; }
+.lore-md li { margin: 0.15rem 0; }
+.lore-md a { color: var(--text-accent); }
+.lore-md code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 0.05rem 0.3rem;
+}
+.lore-md pre {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 0.6rem 0.75rem;
+  overflow-x: auto;
+}
+.lore-md pre code { background: none; border: none; padding: 0; }
+.lore-md blockquote {
+  margin: 0 0 0.7rem;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--accent);
+  color: var(--text-dim);
+}
+.lore-md hr { border: none; border-top: 1px solid var(--border); margin: 0.9rem 0; }
+.lore-md table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 0.7rem;
+  display: block;
+  overflow-x: auto;
+}
+.lore-md th, .lore-md td {
+  border: 1px solid var(--border);
+  padding: 0.3rem 0.5rem;
+  text-align: left;
+}
+.lore-md th { background: var(--bg-raised); color: var(--text-accent); }
+.lore-md img { max-width: 100%; height: auto; border-radius: 2px; }

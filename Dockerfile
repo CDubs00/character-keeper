@@ -9,10 +9,12 @@ RUN npm ci --omit=dev
 COPY backend/ ./
 COPY frontend/build ./frontend/build
 COPY bundles/ ./seed-bundles
+COPY packs/ ./seed-packs
 
 RUN mkdir -p /data
 ENV DATA_DIR=/data
 ENV BUNDLES_DIR=/bundles
+ENV SEED_PACKS_DIR=/app/seed-packs
 ENV SEED_BUNDLES_DIR=/app/seed-bundles
 ENV PORT=3000
 # NODE_ENV intentionally not pinned — compose sets it:
