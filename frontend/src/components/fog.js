@@ -52,11 +52,12 @@ export function parseBody(input) {
       if (close === -1) { buf += text.slice(next); break; }   // unmatched → literal
       const inner = text.slice(next + 2, close);
       const pipe  = inner.indexOf('|');
-      const name    = (pipe === -1 ? inner : inner.slice(0, pipe)).trim();
-      const display = (pipe === -1 ? inner : inner.slice(pipe + 1)).trim();
+      const name  = (pipe === -1 ? inner : inner.slice(0, pipe)).trim();
+      const alias = (pipe === -1 ? '' : inner.slice(pipe + 1)).trim();
       if (!name) { buf += text.slice(next, close + 2); i = close + 2; continue; } // empty [[]] → literal
+      const { ns, target } = splitLinkNamespace(name);
       flush();
-      tokens.push({ type: 'link', name, display: display || name });
+      tokens.push({ type: 'link', name, ns, target, display: alias || target });
       i = close + 2;
     }
   }
@@ -181,11 +182,36 @@ function transform(children) {
   return out;
 }
 
+// Link NAMESPACES (Wave C). `[[Durnan]]` addresses the world's lore;
+// `[[sys:Ankheg]]` addresses the stamped system-reference tier. The prefix is
+// matched against a CLOSED set, never "any word before a colon" — worlds are full
+// of entries called "Chapter 3: The Fall", and a permissive rule would silently
+// reroute them into a namespace that doesn't exist.
+//
+// The token keeps BOTH forms: `name` is the raw authored string (so renderLink
+// round-trips byte-identically) and `target` is the name to resolve within the
+// namespace. Callers that predate namespaces read `name`, which for an
+// un-namespaced link is exactly what it always was.
+// IDENTICAL to backend/loreAccess.js — keep in sync.
+export const LINK_NAMESPACES = new Set(['sys']);
+
+export function splitLinkNamespace(raw) {
+  const m = /^([a-z][a-z0-9]{0,15}):\s*(.+)$/i.exec(raw);
+  if (m && LINK_NAMESPACES.has(m[1].toLowerCase())) {
+    return { ns: m[1].toLowerCase(), target: m[2].trim() };
+  }
+  return { ns: null, target: raw };
+}
+
 // Re-emit a link token exactly as it was authored. A display alias that matches
-// the name collapses to the short form, so a round-trip through stripFog is
-// byte-identical for the common case.
+// the resolved target collapses to the short form, so a round-trip through
+// stripFog is byte-identical for the common case — including a namespaced link,
+// whose default display is the target ("Ankheg") rather than the raw name
+// ("sys:Ankheg"). Comparing against `name` here would re-emit every sys link as
+// `[[sys:Ankheg|Ankheg]]`, quietly rewriting a GM's text on every player fetch.
 export function renderLink(t) {
-  return (t.display && t.display !== t.name)
+  const target = t.target != null ? t.target : t.name;
+  return (t.display && t.display !== target)
     ? `[[${t.name}|${t.display}]]`
     : `[[${t.name}]]`;
 }

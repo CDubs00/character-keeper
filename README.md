@@ -114,11 +114,15 @@ Worlds and campaigns are linked, and that link is how the world stops being GM-o
 - **World backdrops.** Give a world a background image; the app mutes it automatically (a themed scrim + frosted-glass panels) so text is always readable — there's no opacity knob to fiddle with. It shows behind the wiki and as a faint banner on each world card.
 - **External-link policy.** Worlds obey the same admin "Allow external links" setting as sheets: when it's off, off-origin links become plain text and the link button disappears from the format bar.
 
-**Planned — System Packages (reference content).** Lore is deliberately *system-agnostic*: a tavern is a tavern in any ruleset. The next major layer is **system-stamped reference content** — spells, classes, species, creatures, stat blocks — whose field *shape* comes from a game bundle and carries a `systemId` stamp. A world will point at a primary system, entries authored under an older ruleset stay usable while you convert them over time (shown with a system badge until they match), and NPCs/deities will be able to *reference* those stamped stat blocks inline without becoming system-locked themselves. None of this is built yet — it's flagged here so you know where Worlds is heading. The `[[wiki links]]` you write today will resolve to reference entries automatically once that tier exists.
+- **System reference (the stamped tier).** Lore is deliberately *system-agnostic* — a tavern is a tavern in any ruleset — so mechanics live in their own tier alongside it. Point a world at a **game system** (World settings → General) and a **System** section appears in the rail with that ruleset's own categories: for Savage Pathfinder that's Skills, Edges, Hindrances, Gear, Armor, Weapons, Powers, Special Abilities, Bestiary and House Rules. Author statblocks, edges and homebrew there and link them from anywhere with **`[[sys:Ankheg]]`**.
+
+  The field *shapes* come from the **game bundle**, not from the app — the same `emptyEdge` / `emptyPower` templates your character sheet already uses — so a new system is a new bundle, never a new release. Every entry carries a `systemId` **stamp** recording which ruleset it was written for, which is what lets a world outlive a system: change the world's system and existing entries stay put and stay editable, while the **Links & conversion** report lists every `[[sys:…]]` that no longer resolves, **most-referenced first**, as your conversion worklist. Links resolve by *name* at render time, so re-pointing a world re-points every link at once.
+
+  System entries obey the same rules as lore: per-entry **hidden/shared** visibility and `||fog||`, both enforced server-side — so you can write up next session's boss in the Bestiary before the party ever meets it. **Homebrew is just a House Rules entry**; it's mechanical, so it belongs in the stamped tier rather than in a bucket of its own.
 
 **Sessions** — a per-campaign session log tied to the world — are also planned; today session notes live per-character on the character side.
 
-Worlds are **under active development**, but the core is real and in daily use: world + lore authoring, campaign↔world linkage, tiered player access, fog, the calendar/timeline, and customizable categories all work today.
+Worlds are **under active development**, but the core is real and in daily use: world + lore authoring, campaign↔world linkage, tiered player access, fog, the calendar/timeline, customizable categories, and the system-reference tier all work today.
 
 ## Quick start
 
@@ -161,8 +165,8 @@ Passwords have to be at least 10 characters. I followed the modern advice
 | `/login`             | public      | Login                                    |
 | `/characters`        | required    | Roster                                   |
 | `/characters/:id`    | required    | Character sheet                          |
-| `/worlds`            | GM/admin    | Worlds list (the "Keep" module)          |
-| `/worlds/:id`        | GM/admin    | World lore wiki (owner-only)             |
+| `/worlds`            | required    | Worlds list — those you own or belong to |
+| `/worlds/:id`        | required    | World wiki (owner, or member read-only)  |
 | `/share/:token`      | public      | Public share view (view or edit)         |
 
 ¹ `/setup` only works while zero users exist; after that it redirects.
@@ -194,8 +198,70 @@ The scanner only ever **adds** bundles. It never edits or removes an existing
 registry entry, and if two bundles claim the same `sheetId`, the oldest
 registration wins. Bundle file contents (schema, layout, theme, assets) are read live, so editing those just takes a reload; changing a *registered* bundle's manifest metadata needs an admin refresh to re-register.
 
-The five shipped bundles (`swade-core`, `risus-core`, `savage-pathfinder`,
-`dnd5e`, `adnd2e`) are working references to copy from.
+The five shipped bundles (`savage-pathfinder`, `risus-core`, `dnd5e`, `dnd5e24`,
+`adnd2e`) are working references to copy from.
+
+## Adding a system package (the compendium)
+
+A bundle can *also* declare a **system package** — the reference categories a world
+gets when it's stamped with that system (see *System reference* under Worlds). This
+is opt-in and lives in the same `schema.json`:
+
+```jsonc
+"sysrefTypes":  ["skill", "edge", "creature", "rule"],   // ORDERED — this is the rail order
+"sysrefLabels": { "creature": "Bestiary" },              // optional; else pluralised from the id
+"sysrefIcons":  { "creature": "bestiary" },              // optional; else a generic file glyph
+"sysrefFields": {                                        // optional presentation overrides
+  "edge": { "requirements": { "type": "textarea", "fog": true } }
+}
+```
+
+**The rules that matter:**
+
+- **Declare or nothing.** A bundle offers a system **only** if it declares
+  `sysrefTypes`. There's no automatic derivation — without it the bundle is a
+  character sheet and nothing more, and it won't appear in the system picker. Most
+  bundles are sheet-only, and that's a normal state.
+- **Shapes come from the `empty*` blocks you already have.** `"edge"` reads
+  `emptyEdge`; a two-word id like `"magic-item"` reads `emptyMagicItem`. An Edge in
+  the compendium and an Edge on the sheet are the same shape, so declaring it twice
+  would only guarantee drift. `name` is implicit — don't list it as a field. Only
+  scalar values become fields; a nested object is skipped rather than have the app
+  invent an editor for it.
+- **A system rides on a sheet, never the reverse.** A system package requires a
+  registered bundle (all four files, `sheet.html` and `theme.css` included even if
+  they're stubs). Nothing on the character-sheet side ever reads the `sysref*` keys,
+  so adding a package cannot break a sheet.
+- **Enriching an `empty*` block is safe, but check first.** These templates also
+  seed new *character* rows. `sheet.html` binds fields explicitly, so extra keys
+  are inert on the sheet — confirm the `data-bind`s before adding one.
+- **Order is meaningful.** `sysrefTypes` renders in the order you write it; match
+  the rulebook rather than the alphabet.
+- **Every type needs somewhere to hide a secret.** `||fog||` only works in a
+  `textarea` field, so give each type a description (or mark a field
+  `"fog": true`). Otherwise a GM has nowhere to annotate a statblock players can
+  read. `npm test` enforces this.
+- **Author with the rulebook open.** The shapes are the product — a guessed
+  statblock is worse than none, because entries authored against it have to be
+  redone. Ship the schema, not the content: **no SRD or rulebook text**, only the
+  structure plus a couple of obviously-invented samples if you want them.
+
+Check what a bundle yields without touching the UI — `schema.json` is read live, so
+edit and re-run:
+
+```bash
+cd backend && node -e "
+const sr=require('./systemRef');
+for (const t of sr.typesFromSchema(require('../bundles/YOURS/schema.json')))
+  console.log(t.label.padEnd(18) + t.fields.map(f => f.key).join(', '));
+"
+```
+
+Then `npm test` (in `backend/`) checks the contract: if a bundle declares a
+package, every type must yield fields and a fog-capable one.
+
+Two bundles ship as systems today — **Savage Pathfinder** (10 categories, authored
+against its rulebook) and **Risus** (3). The others are sheet-only.
 
 ## Data & volumes
 
@@ -220,6 +286,9 @@ data/
                         uploaded images/attachments — all named after the entry id
   packs/<packId>/       lore-category packs (seeded from the image on first run,
                         never overwritten — same as bundles)
+  sysref/<worldId>/     one JSON per system-reference entry (statblocks, edges,
+                        house rules), each stamped with the systemId it was
+                        written for
   world-assets/         per-world backdrop images (flat <worldId>.backdrop.<ext>),
                         plus a <worldId>/ subdir per world for landing-page images
                         and attachments (asset.<key>.<ext> + assets.json manifest)
@@ -315,7 +384,8 @@ security issue, see [SECURITY.md](SECURITY.md) — please report privately, not 
 Roughly in order, dependency and time permitting:
 
 - **Security Audit** - confirm every mutating route rejects unauthenticated and cross-user requests, and lock that down with automated tests so it can't quietly regress.
-- **More Bundles** — candidates I'd like to do next include D&D 3e, D&D 5e 2024, and Star Wars Saga Edition.
+- **More Bundles** — candidates I'd like to do next include D&D 3e and Star Wars Saga Edition.
+- **More system packages** — the compendium tier works, but only Savage Pathfinder and Risus declare one. The rest are sheet-only until someone works through the rulebook properly; plain Savage Worlds is the obvious next one, since it's near-identical to Savage Pathfinder.
 - **Mobile layout polish** — single-column, collapsible sections on small screens.  
 - **Character Ownership transfers** - Allow a user to transfer a character then own to another User/Admin. 
 - **Add d2/coin-flip** - Dice-Box currently doesnt have a d2 or Coin render so I am attempting on figuring out how to add one. 

@@ -40,11 +40,18 @@ function seedPacksDir() {
 // governments and courts, rather than two categories nobody could tell apart.
 // A live pack keeps whatever categories.json it already has (packs seed once and
 // are never overwritten), so an existing install is unaffected.
+// `planes` is a place, so it sits beside Locations and carries the same shape plus
+// a `category` line (Material / Transitive / Inner / Outer / Demiplane). That
+// grouping is the ONE thing both rulebooks tabulate — the 5e multiverse appendix
+// and the Savage Pathfinder planes page use the same five buckets — which is what
+// makes it safe in a system-agnostic pack. Everything a plane does mechanically is
+// a [[link]] out to the stamped tier, exactly as a deity links to its domains.
 const FALLBACK_CATEGORIES = [
-  { id: 'locations',     label: 'Locations',     icon: 'map-pin',  fields: baseFields() },
+  { id: 'locations',     label: 'Locations',     icon: 'location', fields: baseFields() },
+  { id: 'planes',        label: 'Planes',        icon: 'flame',    fields: planeFields() },
   { id: 'npcs',          label: 'NPCs',          icon: 'user',     fields: baseFields() },
-  { id: 'factions',      label: 'Factions',      icon: 'flag',     fields: baseFields() },
-  { id: 'deities',       label: 'Deities',       icon: 'star',     fields: baseFields() },
+  { id: 'factions',      label: 'Factions',      icon: 'faction',  fields: baseFields() },
+  { id: 'deities',       label: 'Deities',       icon: 'deity',    fields: baseFields() },
   { id: 'events',        label: 'Events',        icon: 'calendar', fields: baseFields() },
 ];
 
@@ -52,6 +59,14 @@ function baseFields() {
   return [
     { key: 'subtitle', label: 'Subtitle',    type: 'text' },
     { key: 'body',     label: 'Description',  type: 'textarea', fog: true },
+  ];
+}
+
+function planeFields() {
+  return [
+    { key: 'subtitle', label: 'Subtitle',   type: 'text' },
+    { key: 'category', label: 'Plane Type', type: 'text' },
+    { key: 'body',     label: 'Description', type: 'textarea', fog: true },
   ];
 }
 

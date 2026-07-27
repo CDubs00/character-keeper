@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const helmet    = require('helmet');
 const sheets    = require('./sheets');
 const packs     = require('./packs');
+const systemRef = require('./systemRef');   // Wave C: the stamped system-reference tier
 const { loadSchema } = sheets;
 const { validateUsername } = require('./validateUsername');
 const { passwordError } = require('./validatePassword');
@@ -60,6 +61,7 @@ const LOGS_FILE       = path.join(DATA_DIR, 'logs.json');
 const WORLDS_FILE     = path.join(DATA_DIR, 'worlds.json');   // Keep: flat world list
 const LORE_DIR        = path.join(DATA_DIR, 'lore');          // Keep: one file per lore entry
 const WORLD_ASSETS_DIR= path.join(DATA_DIR, 'world-assets');  // Keep: per-world backdrop images
+const SYSREF_DIR      = path.join(DATA_DIR, 'sysref');        // Keep: one file per system-reference entry
 
 
 
@@ -743,6 +745,48 @@ function readLoreEntry(worldId, entryId) {
     console.error(`[lore] Failed to parse ${p}: ${e.message}`);
     return null;
   }
+}
+
+// --- system reference (Wave C) -----------------------------------------------
+//
+// Same storage grammar as lore — one JSON file per entry under a per-world dir —
+// because it IS the same kind of record, just stamped. A separate tree
+// (data/sysref/<worldId>/) rather than a reserved lore category, for the reason
+// §4k gave for world assets: anything living in the lore dir shows up in the lore
+// scan, the category rail and the broken-links pass, and would have to be
+// filtered out of each by hand forever.
+//
+// The record deliberately reuses `categoryId` for its type id and `visibility`
+// for its secrecy, so serializeEntryForRole / canSee / the fog stripper operate on
+// it with ZERO new code — the type list from systemRef.js is category-shaped for
+// exactly this reason. What it adds is `systemId`: the stamp naming the ruleset
+// the entry was written for, which is what lets the world outlive the system.
+function sysrefDir(worldId) {
+  return path.join(SYSREF_DIR, worldId);
+}
+function sysrefPath(worldId, entryId) {
+  return path.join(sysrefDir(worldId), `${entryId}.json`);
+}
+
+function readSysrefEntry(worldId, entryId) {
+  const p = sysrefPath(worldId, entryId);
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (e) {
+    console.error(`[sysref] Failed to parse ${p}: ${e.message}`);
+    return null;
+  }
+}
+
+// The reference types available in a world: its `primarySystemId` resolved through
+// the bundle registry. Returns [] when the world has no system set or its bundle
+// is gone — never a fallback set. Unlike lore categories there is no honest
+// default here: nobody's rules are the generic rules, and inventing a shape would
+// mis-file every entry authored under it.
+function worldSystemTypes(world) {
+  if (!world || !world.primarySystemId) return [];
+  return systemRef.loadSystemTypes(DATA_DIR, world.primarySystemId) || [];
 }
 
 
@@ -1671,6 +1715,7 @@ app.param('id', (req, res, next, id) => {
 if (!fs.existsSync(DATA_DIR))  fs.mkdirSync(DATA_DIR,  { recursive: true });
 if (!fs.existsSync(CHARS_DIR)) fs.mkdirSync(CHARS_DIR, { recursive: true });
 if (!fs.existsSync(LORE_DIR))  fs.mkdirSync(LORE_DIR,  { recursive: true });
+if (!fs.existsSync(SYSREF_DIR)) fs.mkdirSync(SYSREF_DIR, { recursive: true });
 if (!fs.existsSync(WORLD_ASSETS_DIR)) fs.mkdirSync(WORLD_ASSETS_DIR, { recursive: true });
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
@@ -3315,6 +3360,12 @@ app.delete('/api/worlds/:id', requireAuth, requireGM, validId, requireWorldOwner
     const p = worldBackdropPath(req.params.id, ext);
     if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch { /* best-effort */ } }
   });
+  // …and its system-reference tree (Wave C), which lives outside LORE_DIR.
+  const sdir = sysrefDir(req.params.id);
+  if (fs.existsSync(sdir)) {
+    try { fs.rmSync(sdir, { recursive: true, force: true }); }
+    catch (e) { console.error(`[sysref] Failed to remove ${sdir}: ${e.message}`); }
+  }
   // …and its world-level asset store (landing-page images + attachments).
   removeWorldAssets(req.params.id);
   res.json({ ok: true });
@@ -3552,6 +3603,41 @@ app.delete('/api/worlds/:id/backdrop', requireAuth, requireGM, validId, requireW
 app.get('/api/worlds/:id/categories', requireAuth, validId, requireWorldRead, (req, res) => {
   const merged = packs.applyCategoryConfig(packs.loadCategories(DATA_DIR, req.world.packId), req.world.categoryConfig);
   res.json(req.worldRole === 'owner' ? merged : merged.filter(c => !c.hidden));
+});
+
+// PUT /api/worlds/:id/categories/config   body: { config: { <catId>: { label?, hidden? } } }
+//
+// The world's per-world category rename/hide overrides (§4j). Owner-only: this is
+// STRUCTURAL — it reshapes the rail for everyone in the world — and structural
+// powers stay with the owner, like the pack and the calendar.
+//
+// `categoryConfig` is APP-OWNED: written ONLY here, never through the generic
+// PUT /api/worlds/:id, so a stray body spread can't reach it.
+//
+// The config is validated against the world's UN-MERGED pack categories, not the
+// merged view: cleanCategoryConfig drops a label equal to the base as a no-op, and
+// handing it already-merged labels would make every existing rename look like a
+// no-op and silently erase it.
+//
+// The stored value REPLACES the old one rather than merging into it. That is what
+// makes un-hiding work: turning a category back on removes its override entirely
+// (`hidden: false` is the default and is not stored), and a merge would keep the
+// stale `{ hidden: true }` key forever — the category could be hidden but never
+// shown again. An empty result deletes the key, so "no overrides" is absent
+// rather than `{}`.
+app.put('/api/worlds/:id/categories/config', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const base   = packs.loadCategories(DATA_DIR, req.world.packId);
+  const clean  = packs.cleanCategoryConfig(req.body && req.body.config, base);
+
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  if (Object.keys(clean).length) world.categoryConfig = clean;
+  else delete world.categoryConfig;
+  saveWorlds(worlds);
+
+  // Return the merged list the client adopts directly (it replaces its category
+  // state with this), so a save and a fresh GET can never disagree.
+  res.json(packs.applyCategoryConfig(base, clean));
 });
 
 // GET /api/worlds/:id/calendar — the world's RESOLVED calendar: its own if the GM
@@ -4193,6 +4279,217 @@ app.delete('/api/worlds/:id/lore/:entryId/assets/:key', requireAuth, requireGM, 
   const next = list.filter(a => a.key !== key);
   writeLoreAssets(req.params.id, req.params.entryId, next);
   res.json({ ok: true, assets: next });
+});
+
+// ---- System reference — the stamped tier (Wave C) ---------------------------
+//
+// Guard chains are IDENTICAL to lore, for the same reasons:
+//   read   → requireWorldRead  + canSee filter + fog strip (serializeEntryForRole)
+//   write  → requireWorldWrite (owner + coGM)
+//   delete → requireWorldOwner (destructive stays structural)
+//
+// NOTE, and this is a deliberate departure from the Wave C handoff: that spec
+// said system reference is visible to EVERY world member with no per-entry
+// tiering, on the grounds that mechanics are not secrets. The owner overrode it —
+// entries here carry per-entry `visibility` and honour ||fog|| exactly like lore.
+// The reason is the unpublished monster: a GM writing up next session's boss wants
+// it in the compendium before the players ever meet it, and "the players are using
+// these rules" is only true of the rules they've been given. Reusing the lore
+// model costs nothing (canSee and serializeEntryForRole are shared verbatim) and
+// removes the footgun where a GM types ||…|| into a statblock note that turns out
+// to be world-readable.
+
+// Only keys the type actually declares survive, and each is capped. An allowlist,
+// never a spread — the same discipline as buildProps and every serializer, so a
+// crafted body can't smuggle an extra key into a stored record and no field can
+// grow without bound. Values are coerced to strings because every derived sysref
+// field is text or textarea (systemRef.js skips non-scalar shapes).
+function sanitizeSysrefFields(fields, typeDef) {
+  const src = fields && typeof fields === 'object' && !Array.isArray(fields) ? fields : {};
+  const out = {};
+  for (const f of (typeDef.fields || [])) {
+    if (!(f.key in src)) continue;
+    const v = src[f.key];
+    if (v == null) { out[f.key] = ''; continue; }
+    if (typeof v === 'object') continue;                 // no structured values here
+    out[f.key] = String(v).slice(0, f.type === 'textarea' ? 20000 : 500);
+  }
+  return out;
+}
+
+// GET /api/systems — the bundles a world can actually be STAMPED with.
+//
+// NOT the same list as GET /api/sheets. A sheet bundle is a character sheet; a
+// SYSTEM is a bundle that also declares a compendium (`sysrefTypes`). Most
+// bundles are both, but the picker must offer only the latter — listing every
+// sheet meant choosing one that yields no types, which either 400s on save or
+// stamps a world with an empty System rail. Filtering here (server-side, where
+// the schemas already are) keeps the client from having to fetch and inspect
+// every schema to find out.
+//
+// GM-gated rather than owner-gated: it names no world and leaks nothing about
+// one — it's the bundle catalogue, and only GMs create or configure worlds.
+app.get('/api/systems', requireAuth, requireGM, (req, res) => {
+  const out = [];
+  for (const row of sheets.loadRegistry(DATA_DIR)) {
+    if (!row.enabled) continue;
+    const types = systemRef.loadSystemTypes(DATA_DIR, row.sheetId);
+    if (!types) continue;                       // no package — not a system
+    out.push({ sheetId: row.sheetId, name: row.name, version: row.version, types: types.length });
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  res.json(out);
+});
+
+// GET /api/worlds/:id/system — the world's stamp + the reference types it offers.
+// Member-readable: a player needs the type list to browse the compendium and to
+// resolve [[sys:…]] links. Returns { systemId: null, types: [] } for a world with
+// no system set, which is a normal state, not an error.
+app.get('/api/worlds/:id/system', requireAuth, validId, requireWorldRead, (req, res) => {
+  const systemId = req.world.primarySystemId || null;
+  res.json({ systemId, types: worldSystemTypes(req.world) });
+});
+
+// PUT /api/worlds/:id/system  body { systemId }
+// STRUCTURAL, so owner-only: changing the stamp re-points every [[sys:…]] link in
+// the world at a different rule set. Existing entries keep their OWN systemId
+// stamp and are NOT rewritten — that is the whole point of stamping. They simply
+// stop resolving under the new system until reconverted, which is exactly the
+// worklist the conversion tracker reports.
+app.put('/api/worlds/:id/system', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const raw = req.body && req.body.systemId;
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+
+  if (raw === null || raw === '') {                    // explicit "no system"
+    delete world.primarySystemId;
+    saveWorlds(worlds);
+    return res.json({ systemId: null, types: [] });
+  }
+  if (typeof raw !== 'string' || !safeId(raw)) {
+    return res.status(400).json({ error: 'Invalid systemId' });
+  }
+  // The bundle must actually exist and yield usable types. Validating here means a
+  // world can never be stamped with a system whose shapes nobody can render.
+  const types = systemRef.loadSystemTypes(DATA_DIR, raw);
+  if (!types) return res.status(400).json({ error: 'Unknown or unusable system bundle' });
+
+  world.primarySystemId = raw;
+  saveWorlds(worlds);
+  res.json({ systemId: raw, types });
+});
+
+// GET /api/worlds/:id/sysref?type=<typeId> — list entries, canSee-filtered and
+// fog-stripped per role. Same plain-`${id}.json` scan as lore, so any future
+// sidecar is excluded by construction.
+app.get('/api/worlds/:id/sysref', requireAuth, validId, requireWorldRead, (req, res) => {
+  const dir = sysrefDir(req.params.id);
+  if (!fs.existsSync(dir)) return res.json([]);
+  const type  = req.query.type;
+  const role  = req.worldRole;
+  const types = worldSystemTypes(req.world);
+  const out = [];
+  for (const file of fs.readdirSync(dir)) {
+    if (!/^[a-z0-9-]+\.json$/i.test(file)) continue;
+    try {
+      const entry = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+      if (type && entry.categoryId !== type) continue;
+      if (!canSee(role, entry.visibility)) continue;
+      out.push(serializeEntryForRole(entry, role, types));
+    } catch (e) {
+      console.error(`[sysref] Skipping unreadable ${file}: ${e.message}`);
+    }
+  }
+  out.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  res.json(out);
+});
+
+// POST /api/worlds/:id/sysref — create. Server owns id, worldId, systemId,
+// createdBy and the timestamps; the stamp comes from the WORLD's current system,
+// never the body, so an entry can only ever be stamped with a system the world is
+// actually on. Defaults to `hidden` like lore: sharing is a deliberate act.
+app.post('/api/worlds/:id/sysref', requireAuth, validId, requireWorldWrite, (req, res) => {
+  const b = req.body || {};
+  const typeId = typeof b.categoryId === 'string' ? b.categoryId : '';
+  const name   = typeof b.name === 'string' ? b.name.trim() : '';
+  if (!typeId) return res.status(400).json({ error: 'categoryId required' });
+  if (!name)   return res.status(400).json({ error: 'Name required' });
+
+  const systemId = req.world.primarySystemId;
+  if (!systemId) return res.status(400).json({ error: 'World has no system set' });
+  const types   = worldSystemTypes(req.world);
+  const typeDef = types.find(t => t.id === typeId);
+  if (!typeDef) return res.status(400).json({ error: 'Unknown reference type' });
+
+  const now = new Date().toISOString();
+  const entry = {
+    id:         newRecordId(name),
+    worldId:    req.params.id,
+    systemId,                                   // the stamp — never from the body
+    categoryId: typeId,
+    name:       name.slice(0, 200),
+    fields:     sanitizeSysrefFields(b.fields, typeDef),
+    visibility: VISIBILITY_STATES.includes(b.visibility) ? b.visibility : DEFAULT_VISIBILITY,
+    createdBy:  req.session.user.username,
+    createdAt:  now,
+    updatedAt:  now,
+  };
+  fs.mkdirSync(sysrefDir(req.params.id), { recursive: true });
+  fs.writeFileSync(sysrefPath(req.params.id, entry.id), JSON.stringify(entry, null, 2));
+  res.json(entry);
+});
+
+// GET /api/worlds/:id/sysref/:entryId — read one. 404 (not 403) when the role
+// can't see it: the same response as a missing entry, so a player probing ids
+// learns nothing about what exists.
+app.get('/api/worlds/:id/sysref/:entryId', requireAuth, validId, requireWorldRead, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const entry = readSysrefEntry(req.params.id, req.params.entryId);
+  if (!entry || !canSee(req.worldRole, entry.visibility)) return res.status(404).json({ error: 'Not found' });
+  res.json(serializeEntryForRole(entry, req.worldRole, worldSystemTypes(req.world)));
+});
+
+// PUT /api/worlds/:id/sysref/:entryId — update name / fields / visibility.
+// App-owned fields (id, worldId, systemId, categoryId, createdBy, createdAt) are
+// re-read from disk and never taken from the body. In particular the STAMP is
+// immutable here: re-stamping in place is what §1 calls the lossy auto-mapping we
+// don't do — conversion creates a NEW entry under the new system.
+//
+// No history sidecar on this tier yet (lore's §4c capture is not wired here) —
+// see the deferred list; it can be added later without a format change because
+// the record shape already matches a lore entry.
+app.put('/api/worlds/:id/sysref/:entryId', requireAuth, validId, requireWorldWrite, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const entry = readSysrefEntry(req.params.id, req.params.entryId);
+  if (!entry || !canSee(req.worldRole, entry.visibility)) return res.status(404).json({ error: 'Not found' });
+
+  const b = req.body || {};
+  // Validate against the type as the ENTRY was stamped, not the world's current
+  // system: a legacy entry stays fully editable while a migration is half-done
+  // (CLAUDE.md §1 — a badged entry is not read-only).
+  const types   = entry.systemId === req.world.primarySystemId
+    ? worldSystemTypes(req.world)
+    : (systemRef.loadSystemTypes(DATA_DIR, entry.systemId) || []);
+  const typeDef = types.find(t => t.id === entry.categoryId);
+  if (!typeDef) return res.status(400).json({ error: 'Entry type is not loadable under its stamped system' });
+
+  if (typeof b.name === 'string' && b.name.trim()) entry.name = b.name.trim().slice(0, 200);
+  if (b.fields && typeof b.fields === 'object') entry.fields = sanitizeSysrefFields(b.fields, typeDef);
+  if (b.visibility !== undefined && VISIBILITY_STATES.includes(b.visibility)) entry.visibility = b.visibility;
+  entry.updatedAt = new Date().toISOString();
+
+  fs.writeFileSync(sysrefPath(req.params.id, entry.id), JSON.stringify(entry, null, 2));
+  res.json(entry);
+});
+
+// DELETE /api/worlds/:id/sysref/:entryId — owner-only, matching lore: destructive
+// and there is no history to restore from on this tier.
+app.delete('/api/worlds/:id/sysref/:entryId', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  if (!safeId(req.params.entryId)) return res.status(400).json({ error: 'Invalid id' });
+  const p = sysrefPath(req.params.id, req.params.entryId);
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'Not found' });
+  fs.rmSync(p, { force: true });
+  res.json({ ok: true });
 });
 
 // Values that identify a GM's campaigns — internal id AND join code,

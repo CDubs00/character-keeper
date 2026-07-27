@@ -134,6 +134,152 @@
 
   "sidecarPaths": ["sessions"],
 
+  "_sysrefNote": [
+    "SYSTEM REFERENCE PACKAGE (CLAUDE.md 4.12). Shapes authored against the 2024",
+    "Player's Handbook: Ch.3 Classes, Ch.4 Origins (backgrounds + species), Ch.5",
+    "Feats, Ch.6 Equipment, Ch.7 Spells, App.A Rules Glossary, App.B Creature Stat",
+    "Blocks. Declaration order mirrors the book.",
+    "",
+    "None of the sheet's own empty* blocks are reused, unlike savage-pathfinder's.",
+    "The 5e sheet's rows are per-character TRACKING records, not definitions:",
+    "emptySpell carries `prepared`, emptyEquipment carries `qty`, emptyFeature is a",
+    "character's earned features rather than the Feat list. Reusing them would put",
+    "a `Prepared` box on a shared compendium spell. So the reference blocks are",
+    "separate and inert to the sheet (the emptyCreature precedent) — SheetRenderer",
+    "looks empty* up by name from the sheet's own array paths, so nothing iterates",
+    "these.",
+    "",
+    "`spell-ref` is the one awkward id: the natural `spell` maps to emptySpell,",
+    "which is the sheet's tracking row. The id is invisible to users (links resolve",
+    "by NAME, and the rail shows sysrefLabels), so the label is simply 'Spells'.",
+    "",
+    "BESTIARY IS DELIBERATELY THIN (slimmed 2026-07-26 from 20 fields to 5 + a",
+    "body). The test: if the rulebook TABULATED it, it earns a field, because that",
+    "is evidence it gets scanned across entries — AC, HP, Speed, CR and the",
+    "size/type/alignment line are what a GM picks a monster BY. Everything the book",
+    "writes as prose (ability scores, skills, senses, languages, resistances, gear,",
+    "Traits, Actions, Bonus Actions, Reactions) goes in the `description` markdown",
+    "body, where it can hold tables, ||fog|| and [[links]] — none of which a `text`",
+    "field can do. Twenty boxes made authoring one monster a form-filling chore and",
+    "still couldn't represent 'Multiattack' properly.",
+    "",
+    "Subclasses are their own type, not a field on the class: a subclass is a named",
+    "entry with its own leveled features (PHB p.54-55), and as an entry it can be",
+    "[[sys:Path of the Berserker]]-linked from anywhere. The class's `progression`",
+    "field holds the level table as a markdown table (remark-gfm is on).",
+    "",
+    "Magic Items follow the printed header exactly: name, then the italic",
+    "'Wondrous Item, Very Rare (Requires Attunement)' line split into item_type /",
+    "rarity / attunement, then the body. Charges are NOT a field — the book keeps",
+    "them in prose, and inventing a slot the rulebook doesn't have is the mistake",
+    "that got the earlier 5e package reverted."
+  ],
+
+  "sysrefTypes": [
+    "class", "subclass", "background", "species", "feat",
+    "weapon", "armor", "gear", "magic-item", "spell-ref",
+    "monster", "vehicle", "glossary", "rule"
+  ],
+
+  "sysrefLabels": {
+    "class": "Classes",
+    "subclass": "Subclasses",
+    "magic-item": "Magic Items",
+    "background": "Backgrounds",
+    "species": "Species",
+    "feat": "Feats",
+    "weapon": "Weapons",
+    "armor": "Armor",
+    "gear": "Adventuring Gear",
+    "spell-ref": "Spells",
+    "monster": "Bestiary",
+    "vehicle": "Vehicles",
+    "glossary": "Rules Glossary",
+    "rule": "House Rules"
+  },
+
+  "sysrefIcons": {
+    "class": "user",
+    "subclass": "skill",
+    "magic-item": "flame",
+    "background": "flag",
+    "species": "faction",
+    "feat": "star",
+    "weapon": "swords",
+    "armor": "armor",
+    "gear": "box",
+    "spell-ref": "power",
+    "monster": "bestiary",
+    "vehicle": "building",
+    "glossary": "dice",
+    "rule": "log"
+  },
+
+  "emptyClass":      { "name": "", "primary_ability": "", "hit_die": "", "saving_throws": "", "skill_proficiencies": "", "weapon_proficiencies": "", "armor_training": "", "starting_equipment": "", "progression": "", "description": "" },
+  "emptySubclass":   { "name": "", "class": "", "tagline": "", "features": "", "description": "" },
+  "emptyMagicItem":  { "name": "", "item_type": "", "rarity": "", "attunement": "", "description": "" },
+  "emptyBackground": { "name": "", "ability_scores": "", "feat": "", "skill_proficiencies": "", "tool_proficiency": "", "equipment": "", "description": "" },
+  "emptySpecies":    { "name": "", "creature_type": "Humanoid", "size": "Medium", "speed": "30 feet", "traits": "", "description": "" },
+  "emptyFeat":       { "name": "", "category": "General", "prerequisite": "", "repeatable": "No", "benefit": "" },
+  "emptyWeapon":     { "name": "", "damage": "", "properties": "", "mastery": "", "weight": "", "cost": "", "notes": "" },
+  "emptyArmor":      { "name": "", "ac": "", "strength": "", "stealth": "", "weight": "", "cost": "", "notes": "" },
+  "emptyGear":       { "name": "", "weight": "", "cost": "", "description": "" },
+  "emptySpellRef":   { "name": "", "level": "", "school": "", "classes": "", "cast_time": "Action", "range": "", "components": "", "duration": "", "description": "" },
+  "emptyMonster":    { "name": "", "size_type_alignment": "", "ac": "", "hp": "", "speed": "", "cr": "", "description": "" },
+  "emptyVehicle":    { "name": "", "speed": "", "crew": "", "passengers": "", "cargo": "", "ac": "", "hp": "", "damage_threshold": "", "cost": "", "description": "" },
+  "emptyGlossary":   { "name": "", "category": "", "see_also": "", "description": "" },
+  "emptyRule":       { "name": "", "topic": "", "replaces": "", "description": "" },
+
+  "sysrefFields": {
+    "class": {
+      "saving_throws":       { "label": "Saving Throw Proficiencies" },
+      "skill_proficiencies": "textarea",
+      "starting_equipment":  "textarea",
+      "progression":         { "type": "textarea", "fog": false, "label": "Features Table" },
+      "description":         { "type": "textarea", "label": "Class Features" }
+    },
+    "subclass": {
+      "class":    { "label": "Parent Class" },
+      "tagline":  { "label": "Tagline" },
+      "features": { "type": "textarea", "fog": true, "label": "Subclass Features" }
+    },
+    "magic-item": {
+      "item_type":  { "label": "Item Type" },
+      "attunement": { "label": "Attunement" }
+    },
+    "background": {
+      "ability_scores":      { "label": "Ability Scores" },
+      "skill_proficiencies": { "label": "Skill Proficiencies" },
+      "tool_proficiency":    { "label": "Tool Proficiency" },
+      "equipment":           "textarea"
+    },
+    "species": {
+      "creature_type": { "label": "Creature Type" },
+      "traits":        { "type": "textarea", "fog": true, "label": "Special Traits" }
+    },
+    "feat": {
+      "prerequisite": { "label": "Prerequisite" },
+      "benefit":      { "type": "textarea", "fog": true }
+    },
+    "weapon": { "properties": "textarea" },
+    "armor":  { "ac": { "label": "Armor Class (AC)" }, "strength": { "label": "Strength" } },
+    "spell-ref": {
+      "cast_time":  { "label": "Casting Time" },
+      "components": { "label": "Components" },
+      "classes":    { "label": "Class Lists" }
+    },
+    "monster": {
+      "size_type_alignment": { "label": "Size, Type, Alignment" },
+      "cr":          { "label": "CR" },
+      "description": { "type": "textarea", "fog": true, "label": "Stat Block" }
+    },
+    "vehicle": { "damage_threshold": { "label": "Damage Threshold" } },
+    "glossary": {
+      "category": { "label": "Rule Category" },
+      "see_also": { "label": "See Also" }
+    }
+  },
+
   "emptySession": { "date": "@today", "notes": "", "todos": "", "loot": "", "npcs": "", "misc": "" },
 
   "searchable": {

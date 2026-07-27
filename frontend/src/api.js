@@ -253,6 +253,56 @@ export const api = {
   async kickCampaignCharacter(worldId, campaignId, charId) {
     return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/campaigns/${campaignId}/characters/${charId}`, { method: 'DELETE' }));
   },
+  // --- Keep: system reference — the stamped tier (Wave C) ------------------
+  // The bundles a world can be STAMPED with — i.e. those that declare a
+  // compendium (`sysrefTypes`). Deliberately NOT getSheets(): that lists every
+  // character sheet, most of which offer no system reference at all.
+  async getSystems() {
+    return handle(await fetchWithRetry(`${BASE}/api/systems`));
+  },
+  // The world's ruleset stamp plus the reference types that ruleset's BUNDLE
+  // declares (Edges, Powers, Bestiary…). Member-readable: a player needs the type
+  // list to browse the compendium and to resolve [[sys:…]] links.
+  async getWorldSystem(worldId) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/system`));
+  },
+  // Owner-only, and structural: it re-points every [[sys:…]] link in the world.
+  // Existing entries keep their own stamp — pass null to clear.
+  async setWorldSystem(worldId, systemId) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/system`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ systemId }),
+    }));
+  },
+  async getSysrefEntries(worldId, typeId) {
+    const q = typeId ? `?type=${encodeURIComponent(typeId)}` : '';
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/sysref${q}`));
+  },
+  async getSysrefEntry(worldId, entryId) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/sysref/${entryId}`));
+  },
+  // `categoryId` here is the reference TYPE id. The name is shared with lore on
+  // purpose: the record shapes are identical, which is what lets one serializer,
+  // one fog stripper and one entry form serve both tiers.
+  async createSysrefEntry(worldId, body) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/sysref`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }));
+  },
+  async updateSysrefEntry(worldId, entryId, body) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/sysref/${entryId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }));
+  },
+  async deleteSysrefEntry(worldId, entryId) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/sysref/${entryId}`, { method: 'DELETE' }));
+  },
+
   // --- Keep: lore categories + entries + history --------------------------
   async getWorldCategories(worldId) {
     return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/categories`));

@@ -462,4 +462,4 @@ function loadSchema(dataDir, sheetId) {
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = { scanBundles, registerRoutes, loadSchema };
+module.exports = { scanBundles, registerRoutes, loadSchema, loadRegistry };
