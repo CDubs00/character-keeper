@@ -142,11 +142,15 @@
   },
   "emptyEdge": {
     "name": "",
+    "type": "",
+    "requirements": "",
+    "class": "",
     "description": ""
   },
   "emptyHindrance": {
     "name": "",
     "type": "Minor",
+    "requirements": "",
     "description": ""
   },
   "emptyWeapon": {
@@ -155,33 +159,55 @@
     "range": "",
     "ap": "",
     "rof": "",
+    "min_str": "",
     "wt": "",
+    "cost": "",
     "notes": ""
   },
   "emptyArmor": {
     "name": "",
     "armor": "",
+    "min_str": "",
     "wt": "",
+    "cost": "",
     "description": ""
   },
   "emptyGear": {
     "name": "",
     "wt": "",
+    "cost": "",
     "description": ""
   },
   "emptyPower": {
     "name": "",
+    "rank": "",
     "pp": "",
     "range": "",
     "duration": "",
-    "effect": ""
+    "school": "",
+    "trappings": "",
+    "effect": "",
+    "modifiers": ""
   },
+  "emptyDomain": { "name": "", "aspects": "", "deities": "", "available_powers": "", "description": "" },
   "emptyAbility": {
     "name": "",
     "description": ""
   },
   "emptyAdvance": {
     "rank": "N",
+    "description": ""
+  },
+  "emptyCreature": {
+    "name": "",
+    "wild_card": "No",
+    "attributes": "Agility d6, Smarts d6, Spirit d6, Strength d6, Vigor d6",
+    "skills": "",
+    "pace": "6",
+    "parry": "2",
+    "toughness": "4",
+    "gear": "",
+    "special": "",
     "description": ""
   },
   "emptyCompanion": {
@@ -197,24 +223,118 @@
     "npcs": "",
     "misc": ""
   },
-  "sidecarPaths": ["sessions"],
+  "sidecarPaths": [
+    "sessions"
+  ],
+  "sysrefTypes": [
+    "skill",
+    "edge",
+    "hindrance",
+    "gear",
+    "armor",
+    "weapon",
+    "power",
+    "domain",
+    "ability",
+    "creature",
+    "rule"
+  ],
+  "sysrefLabels": {
+    "skill": "Skills",
+    "edge": "Edges",
+    "hindrance": "Hindrances",
+    "gear": "Gear",
+    "armor": "Armor",
+    "weapon": "Weapons",
+    "power": "Powers",
+    "domain": "Domains",
+    "ability": "Special Abilities",
+    "creature": "Bestiary",
+    "rule": "House Rules"
+  },
+  "sysrefIcons": {
+    "skill": "skill",
+    "edge": "star",
+    "hindrance": "hindrance",
+    "gear": "box",
+    "armor": "armor",
+    "weapon": "swords",
+    "power": "power",
+    "domain": "deity",
+    "ability": "star",
+    "creature": "bestiary",
+    "rule": "log"
+  },
+  "sysrefFields": {
+    "skill": {
+      "description": "textarea"
+    },
+    "edge": {
+      "requirements": "textarea",
+      "description": "textarea"
+    },
+    "hindrance": {
+      "requirements": "textarea",
+      "description": "textarea"
+    },
+    "gear": {
+      "description": "textarea"
+    },
+    "armor": {
+      "description": {
+        "type": "textarea",
+        "label": "Notes"
+      }
+    },
+    "weapon": {
+      "notes": "textarea"
+    },
+    "power": {
+      "trappings": "textarea",
+      "effect": "textarea",
+      "modifiers": "textarea"
+    },
+    "domain": {
+      "deities":          { "type": "textarea", "label": "Deities" },
+      "available_powers": { "type": "textarea", "label": "Available Powers" },
+      "description":      "textarea"
+    },
+    "ability": {
+      "description": "textarea"
+    },
+    "creature": {
+      "skills": "textarea",
+      "gear": "textarea",
+      "special": "textarea",
+      "description": "textarea"
+    },
+    "rule": {
+      "description": "textarea"
+    }
+  },
   "searchable": {
-    "info.concept":           "Concept",
-    "info.ancestry":          "Ancestry",
-    "info.religion":          "Religion",
-    "background.description":  "Description",
-    "background.backstory":   "Backstory",
-    "edges.name":             "Edge",
-    "edges.description":      "Edge",
-    "hindrances.name":        "Hindrance",
+    "info.concept": "Concept",
+    "info.ancestry": "Ancestry",
+    "info.religion": "Religion",
+    "background.description": "Description",
+    "background.backstory": "Backstory",
+    "edges.name": "Edge",
+    "edges.description": "Edge",
+    "hindrances.name": "Hindrance",
     "hindrances.description": "Hindrance",
-    "weapons.name":           "Weapon",
-    "weapons.notes":          "Weapon",
-    "powers.name":            "Power",
-    "powers.effect":          "Power"
+    "weapons.name": "Weapon",
+    "weapons.notes": "Weapon",
+    "powers.name": "Power",
+    "powers.effect": "Power"
   },
   "dice": {
-  "available": ["d4","d6","d8","d10","d12"]
+    "available": [
+      "d4",
+      "d6",
+      "d8",
+      "d10",
+      "d12"
+    ]
   },
   "rankAdvances": [
     {
@@ -303,7 +423,6 @@
     "Parry": "Parry is equal to 2 plus half your characters Fighting die type (a total of 2 if a character doesnt have Fighting), plus any bonuses for shields or certain weapons. This is the Target Number (TN) to hit your hero in hand-to-hand combat.\n\tFor Fighting skills higher than d12, such as d12 + 1 , add half the fixed modifier, rounded down. For instance, Fighting d12 + 1 grants a Parry of 8, while Fighting d12 + 2 results in a Parry of 9.",
     "Toughness": "Toughness is your heros damage threshold. Damage rolls that equal or exceed this number cause harm (explained pg.125).\n\tToughness is 2 plus half your heros Vigor, plus Armor (use the armor worn on his torso, see pg.108). Vigor over a d12 is calculated just like Parry, above.",
     "Armor": "This is the amount of Armor provided by equipment, Unless an attacker states otherwise, hits are always directed at the victims torso.\n\tWorn armor doesnt stack with other worn armor, but does stack with natural armor (such as scaly skin) at its full value.",
-
     "Academics": "Academics reflects knowledge of the arts, history, archaeology, religion, and similar fields, or the ability to find that information. If an explorer wants to research when the Imperial Calendar began or cite a line from Azvadeva Pujila, or use his linguistic expertise to decipher a dead language, this is the skill to have.",
     "Alchemy": "Alchemy is a new arcane skill for the Alchemist Class Edge (see pg.38 of the Advanced Players Guide).",
     "Athletics": "Athletics combines an individual’s coordination with learned skills such as climbing, jumping, balancing, wrestling, swimming, throwing, or catching. Characters who rely on physical power more than coordination can take the Brute Edge (pg.41) to link this skill to Strength instead of Agility.",
@@ -314,7 +433,7 @@
     "Faith": "Clerics and druids use Faith as the arcane skill required for their Arcane Backgrounds, described on pgs.48 and 52.",
     "Fighting": "Fighting covers all hand-to-hand (melee) attacks, whether it’s with fists, axes, swords, or martial arts. It reflects skill as well as raw power, savagery, and fearlessness.",
     "Gambling": "Gambling is common in taverns, roadside inns, the barracks of most armies, or below decks of ships at sea. See pg.34 for more details",
-    "Healing":"Healing has multiple uses, from treating Wounds to diagnosing diseases and analyzing certain kinds of forensic evidence.\n\tSee pg.34 for more about this skill, see pg.128 for rules on mending and treating Wounds, and pg.152 and 155 for treatment of disease or poison.",
+    "Healing": "Healing has multiple uses, from treating Wounds to diagnosing diseases and analyzing certain kinds of forensic evidence.\n\tSee pg.34 for more about this skill, see pg.128 for rules on mending and treating Wounds, and pg.152 and 155 for treatment of disease or poison.",
     "Intimidation": "Intimidation is the art of frightening an opponent so that he backs down, reveals information, or flees.\n\tIntimidation is an opposed roll resisted by the opponent’s Spirit. In combat, this is a Test (see pg.140). Out of combat, a successful roll means the foe backs down for the most part, reveals some information, or slinks away when the opportunity presents itself. See pg. 34 for more details. For Animal Handling see pg.35 of the Advanced Players Guide.",
     "Notice": "Notice is a hero’s general awareness and alertness. It’s used to sense sights, sounds, tastes, and smells, spot clues, detect ambushes, spot hidden weapons on a foe, or tell if a rival is lying, frightened, happy, etc.\n\tSuccess conveys basic information—the character hears movement in the forest, smells distant smoke, or senses someone isn’t being completely truthful.\n\tA raise grants more detail, such as the direction of a sound or odor or what topic a person is avoiding or lying about.",
     "Occult": "Occult reflects knowledge and experience of magical and supernatural events, processes, items, and creatures.\n\tIt can be used to decipher glyphs, recall information about Golarion's monsters, recall cures for supernatural maladies like lycanthropy or vampirism, and so on. See pg.35 for more information",
@@ -330,5 +449,11 @@
     "Survival": "Survival allows a character to find food, water, or shelter in hostile environments. It can also be used to navigate wilderness environments, figure out which plants are good to eat and which aren’t, and so on.\n\tA successful Survival roll provides enough food and water for one person for one day; or five people with a raise. (For details on Hunger and Thirst see pg.155.)\n\tSurvival can also be used to detect and follow tracks. See pg.39 for more details",
     "Taunt": "Taunt attacks a person’s pride through ridicule, cruel jests, or oneupmanship. Taunt is an opposed roll resisted by the opponent’s Smarts. In combat, this is a Test (see page 140). Out of combat, success means the defender backs down, slinks away, or starts a fight. See pg. 39 for more details",
     "Thievery": "Lockpicking, safecracking, picking pockets, sleight of hand, setting and disabling traps, and similar acts of misdirection, sabotage, subterfuge, and manipulation are called Thievery. See pg.39 for more details"
+  },
+  "emptyRule": {
+    "name": "",
+    "topic": "",
+    "replaces": "",
+    "description": ""
   }
 }

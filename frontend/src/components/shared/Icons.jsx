@@ -354,3 +354,153 @@ export function ClearDiceIcon({ size = 20, ...props }) {
     </svg>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Keep — World Lore & System category glyphs (added from uploaded art). Each is
+// named for its source file and drawn filled on the shared 800x800 grid unless
+// noted, so it inherits currentColor like every icon above. Location & Deities
+// are the user-authored SVGs, dropped in exact on their native viewBoxes with
+// fill switched to currentColor.
+// ---------------------------------------------------------------------------
+
+// Bestiary — dragon-head profile: horns swept back, eye + open maw carved by
+// evenodd, with the fang a separate solid triangle on the lower jaw.
+export function BestiaryIcon(props) {
+  return (
+    <Icon {...props}>
+      <g transform="translate(-86,-25) scale(1.2662)">
+        <path d="M140,322 C150,286 200,262 250,250 C300,238 322,222 348,200 L398,176 L436,74 L472,184 L520,176 L560,62 L600,192 L662,150 L648,302 C644,372 636,442 602,506 C584,549 556,589 516,603 C498,609 484,601 480,585 C472,561 452,546 432,549 C360,557 250,541 150,470 C118,449 106,404 132,372 C150,349 138,344 140,322 Z M296,286 C322,282 340,300 336,326 C332,352 300,368 282,352 C266,338 270,290 296,286 Z M150,432 L322,470 L150,506 Z" />
+        <path d="M234,498 L258,566 L282,498 Z" />
+      </g>
+    </Icon>
+  );
+}
+
+// Skill — a hand-drawn check inside a broken ring. Both are stroked (fill:none)
+// so the wrapper's currentColor paints the strokes, like ShareIcon.
+export function SkillIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M672,527 A300,300 0 1 1 596,175" fill="none" stroke="currentColor" strokeWidth="60" strokeLinecap="round" />
+      <path d="M285,405 L385,520 L650,180" fill="none" stroke="currentColor" strokeWidth="62" strokeLinecap="round" strokeLinejoin="round" />
+    </Icon>
+  );
+}
+
+// Hindrances — a smooth skull; two eye sockets and the nasal cavity are carved
+// as evenodd holes.
+export function HindrancesIcon(props) {
+  return (
+    <Icon {...props}>
+      <g transform="translate(-157,-119) scale(1.3913)">
+        <path d="M400,120 C295,120 208,192 198,315 C194,362 200,405 214,442 L214,556 C214,600 246,626 292,626 L300,626 L300,600 C300,588 312,580 326,580 C340,580 352,588 352,600 L352,626 L448,626 L448,600 C448,588 460,580 474,580 C488,580 500,588 500,600 L500,626 L508,626 C554,626 586,600 586,556 L586,442 C600,405 606,362 602,315 C592,192 505,120 400,120 Z M318,360 C360,360 388,398 388,442 C388,486 360,520 318,520 C276,520 250,486 250,442 C250,398 276,360 318,360 Z M482,360 C524,360 550,398 550,442 C550,486 524,520 482,520 C440,520 412,486 412,442 C412,398 440,360 482,360 Z M400,540 C420,540 436,556 440,578 C442,592 430,600 400,600 C370,600 358,592 360,578 C364,556 380,540 400,540 Z" />
+      </g>
+    </Icon>
+  );
+}
+
+// Powers — a comet/meteor: head at lower-left with an evenodd hollow, a sharp
+// trail to the upper-right, and two detached spark streaks.
+export function PowersIcon(props) {
+  return (
+    <Icon {...props}>
+      <g transform="translate(-64,-31) scale(1.1656)">
+        <path d="M150,500 C104,470 96,392 140,352 C176,320 232,322 268,300 C240,346 296,352 320,312 C300,368 356,372 384,336 C360,392 414,398 440,360 C430,430 476,430 520,398 C470,470 700,150 700,150 C700,150 470,404 470,404 C486,470 452,558 360,588 C260,620 178,548 150,500 Z M262,486 C224,486 200,516 206,554 C210,586 240,602 274,596 C310,590 326,552 314,520 C304,494 290,486 262,486 Z" />
+        <path d="M556,232 L648,196 L588,272 Z" />
+        <path d="M470,150 L534,120 L494,186 Z" />
+      </g>
+    </Icon>
+  );
+}
+
+// Powers (lightning) — a six-point bolt. Deliberately a SIMPLE silhouette: the
+// rail renders at 17px, where a comet's detached spark streaks and a flame's
+// inner curl turn to mush. A bolt is one convex-ish polygon with a wide waist,
+// so it stays legible at any size and still reads as "power" without implying a
+// damage type the way a flame implies fire.
+export function LightningIcon(props) {
+  return (
+    <Icon {...props}>
+      <g transform="translate(-2,-2) scale(1.0057)">
+        <path d="M500,50 L210,440 L360,440 L300,750 L590,360 L440,360 Z" />
+      </g>
+    </Icon>
+  );
+}
+
+// Powers (flame) — the alternative. A teardrop body with an evenodd inner hole
+// so it reads as a flame rather than a blob, plus a small licking curl at the
+// base. Heavier in detail than the bolt, so it holds up less well at 17px — it's
+// here as the swap option, not as the default.
+export function FlameIcon(props) {
+  return (
+    <Icon {...props}>
+      <g transform="translate(-69,-22) scale(1.1733)">
+        <path d="M400,60 C470,220 600,300 600,450 C600,570 510,660 400,660 C290,660 200,570 200,450 C200,370 250,320 300,290 C290,360 320,410 360,420 C330,330 350,180 400,60 Z M400,300 C450,390 480,430 480,490 C480,550 445,590 400,590 C355,590 320,550 320,490 C320,440 355,390 400,300 Z" />
+      </g>
+    </Icon>
+  );
+}
+
+// Armor — a shield with a thin inset outline. Three nested shield sub-paths:
+// evenodd fills the rim, hollows the thin line, then fills the center solid.
+export function ArmorIcon(props) {
+  return (
+    <Icon {...props}>
+      <g transform="translate(-110,-143) scale(1.2754)">
+        <path d="M400.0,150.0 L620.0,210.0 C630.0,213.0 640.0,222.0 640.0,235.0 L640.0,430.0 C640.0,562.0 540.0,652.0 400.0,702.0 C260.0,652.0 160.0,562.0 160.0,430.0 L160.0,235.0 C160.0,222.0 170.0,213.0 180.0,210.0 Z M400.0,184.8 L593.6,237.6 C602.4,240.2 611.2,248.2 611.2,259.6 L611.2,431.2 C611.2,547.4 523.2,626.6 400.0,670.6 C276.8,626.6 188.8,547.4 188.8,431.2 L188.8,259.6 C188.8,248.2 197.6,240.2 206.4,237.6 Z M400.0,219.6 L567.2,265.2 C574.8,267.5 582.4,274.3 582.4,284.2 L582.4,432.4 C582.4,532.7 506.4,601.1 400.0,639.1 C293.6,601.1 217.6,532.7 217.6,432.4 L217.6,284.2 C217.6,274.3 225.2,267.5 232.8,265.2 Z" />
+      </g>
+    </Icon>
+  );
+}
+
+// Factions — a hooded cowl with an empty face (evenodd hole): a faceless order.
+export function FactionsIcon(props) {
+  return (
+    <Icon {...props}>
+      <g transform="translate(-86,-86) scale(1.2138)">
+        <path d="M400,110 C330,110 300,170 300,220 C300,262 322,296 356,312 C300,320 250,344 230,392 L150,600 C300,560 340,660 400,690 C460,660 500,560 650,600 L570,392 C550,344 500,320 444,312 C478,296 500,262 500,220 C500,170 470,110 400,110 Z M400,168 C438,168 452,200 452,224 C452,258 430,282 400,282 C370,282 348,258 348,224 C348,200 362,168 400,168 Z" />
+      </g>
+    </Icon>
+  );
+}
+
+// Location — user-authored temple/columns glyph, exact on its native 1200x1200
+// grid; fill switched to currentColor so it themes like the rest.
+export function LocationIcon({ size = 20, ...props }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 1200 1200"
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      aria-hidden="true"
+      {...props}
+    >
+      <g transform="matrix(2.29892,0,0,2.58256,-698.891,-1019.58)">
+        <path d="M744.74,399.026C744.74,397.616 741.717,394.795 740.205,394.795L673.655,394.795C672.411,394.795 671.534,396.407 671.441,397.213C669.78,411.563 662.326,475.956 660.944,487.889C660.802,489.122 659.384,489.795 658.715,489.795L613.215,489.795C612.015,489.795 611.253,489.122 611.103,487.889C609.658,475.956 601.856,411.563 600.118,397.213C600.02,396.407 598.339,394.795 597.596,394.795L531.045,394.795C530.381,394.795 528.865,396.407 528.771,397.213C527.107,411.563 519.637,475.956 518.253,487.889C518.11,489.122 517.334,489.795 516.105,489.795L471.285,489.795C470.644,489.795 469.283,489.122 469.139,487.889C467.747,475.956 460.235,411.563 458.561,397.213C458.467,396.407 457.589,394.795 456.345,394.795L389.795,394.795C388.283,394.795 385.26,397.616 385.26,399.026L385.26,512.795C385.26,512.795 424.339,535.723 432.577,540.556C433.281,540.969 434.688,542.385 434.688,543.504L434.688,752.059C434.688,752.706 433.919,754 432.577,754L389.795,754C388.266,754 385.209,756.333 385.209,757.5L385.209,859.451L744.791,859.451L744.791,757.5C744.791,756.333 742.187,754 740.885,754L697.423,754C696.081,754 695.312,752.706 695.312,752.059L695.312,543.504C695.312,542.385 696.719,540.969 697.423,540.556C705.661,535.723 744.74,512.795 744.74,512.795L744.74,399.026Z" />
+      </g>
+    </svg>
+  );
+}
+
+// Deities — user-authored tentacle glyph, exact on its native 32x32 grid; fill
+// switched to currentColor so it themes like the rest.
+export function DeitiesIcon({ size = 20, ...props }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="currentColor"
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M20.431 12.59c-0.050-0.072-0.133-0.137-0.247-0.189-1.81-1.231-4.572-0.060-3.605 2.967 2.388 7.48 15.122 1.144 12.463-6.96-1.634-4.979-4.952-7.125-9.438-7.179v0.001c-5.768-0.069-12.316 3.334-14.868 8.309-3.62 7.056-1.787 13.838 2.186 20.99l11.89-0c0.046 0.002 0.092 0.003 0.14 0.001 0.009-0 0.018-0.001 0.027-0.001l3.358-0c-0.654-0.219-1.303-0.492-1.94-0.814 0.629-1.060 0.147-2.771-1.445-2.728-0.704 0.019-1.191 0.369-1.461 0.842-0.051-0.841-0.621-1.63-1.709-1.601-0.028 0.001-0.055 0.002-0.082 0.004 1.163-0.906 0.816-3.241-1.041-3.191-0.513 0.014-0.91 0.204-1.193 0.488 0.253-0.797-0.107-1.8-1.078-1.93 1.829-0.475 1.681-3.539-0.444-3.482-0.289 0.008-0.541 0.071-0.756 0.176 0.531-0.618 0.456-1.698-0.227-2.147 0.111 0.017 0.228 0.025 0.352 0.021 2.212-0.058 2.281-3.387 0.207-3.538 0.018-0.043 0.036-0.086 0.054-0.129 0.436-0.216 0.639-0.695 0.609-1.149 0.050-0.078 0.101-0.156 0.154-0.234 0.255 0.199 0.592 0.318 1.012 0.307 1.529-0.040 1.963-1.75 1.304-2.698 0.262-0.197 0.539-0.389 0.832-0.575 0.101-0.064 0.203-0.124 0.308-0.182 0.133 0.689 0.655 1.28 1.568 1.255 1.231-0.032 1.752-1.147 1.565-2.075 0.643-0.024 1.282 0.028 1.885 0.144-0.242 0.826 0.191 1.862 1.3 1.832 0.62-0.016 1.028-0.354 1.226-0.791 0.157 0.118 0.301 0.243 0.429 0.374 0.051 0.331 0.23 0.636 0.536 0.797 0.014 0.034 0.026 0.068 0.038 0.102 0.048 0.139 0.085 0.283 0.114 0.431-1.43 0.057-1.507 2.16-0.229 2.366-0.043 0.122-0.091 0.242-0.143 0.362-0.263 0.198-0.411 0.506-0.443 0.825-0.131 0.203-0.277 0.398-0.435 0.584-0.118-0.311-0.395-0.552-0.833-0.54-0.966 0.026-1.153 1.238-0.563 1.691-0.203 0.112-0.416 0.211-0.638 0.293-0.254 0.094-0.511 0.171-0.765 0.219 0.104-0.402-0.11-0.892-0.645-0.877-0.461 0.012-0.683 0.386-0.67 0.743-0.261-0.132-0.503-0.342-0.718-0.654 0.689-0.203 0.629-1.363-0.179-1.356 0.113-0.243 0.302-0.461 0.542-0.637 0.151 0.123 0.419 0.209 0.803 0.204 0.784-0.010 1.083-0.385 0.898-0.666 0.002 0 0.004 0 0.005 0-0.003-0.003-0.007-0.006-0.010-0.009z" />
+    </svg>
+  );
+}

@@ -2,11 +2,34 @@
   {
     "id": "locations",
     "label": "Locations",
-    "icon": "map-pin",
+    "icon": "location",
     "fields": [
       {
         "key": "subtitle",
         "label": "Subtitle",
+        "type": "text"
+      },
+      {
+        "key": "body",
+        "label": "Description",
+        "type": "textarea",
+        "fog": true
+      }
+    ]
+  },
+  {
+    "id": "planes",
+    "label": "Planes",
+    "icon": "flame",
+    "fields": [
+      {
+        "key": "subtitle",
+        "label": "Subtitle",
+        "type": "text"
+      },
+      {
+        "key": "category",
+        "label": "Plane Type",
         "type": "text"
       },
       {
@@ -38,7 +61,7 @@
   {
     "id": "factions",
     "label": "Factions",
-    "icon": "flag",
+    "icon": "faction",
     "fields": [
       {
         "key": "subtitle",
@@ -56,7 +79,7 @@
   {
     "id": "deities",
     "label": "Deities",
-    "icon": "star",
+    "icon": "deity",
     "fields": [
       {
         "key": "subtitle",

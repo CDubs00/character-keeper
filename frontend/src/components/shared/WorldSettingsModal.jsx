@@ -26,7 +26,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import WorldCalendarEditor from './WorldCalendarEditor';
 import { api } from '../../api';
-import { parseBody } from '../fog';
+import { parseBody, splitLinkNamespace } from '../fog';
 import {
   MapPinIcon, UserIcon, FlagIcon, StarIcon, CalendarIcon, BuildingIcon,
   FileIcon, EyeOffIcon,
@@ -66,7 +66,7 @@ const SECTIONS = [
   { id: 'categories', label: 'Categories' },
   { id: 'calendar',   label: 'Calendar' },
   { id: 'proposals',  label: 'Proposals' },
-  { id: 'links',      label: 'Broken links' },
+  { id: 'links',      label: 'Links & conversion' },
 ];
 
 // Member tiers, ascending. `coGM` is GM-equivalent for CONTENT: reads hidden
@@ -111,6 +111,31 @@ export default function WorldSettingsModal({ worldId, initialSection = 'general'
   const fileRef = useRef(null);
 
   useEffect(() => () => { if (bdPreview) URL.revokeObjectURL(bdPreview); }, [bdPreview]);
+
+  // ---- Wave C: the world's system stamp -------------------------------------
+  // Which ruleset this world's system-reference tier is written for. The field
+  // shapes come from that BUNDLE's schema, so picking a system is what makes the
+  // System rail section appear at all. Staged like the backdrop and committed on
+  // Save, since it is a separate owner-only endpoint.
+  const [systems,     setSystems]     = useState([]);   // installed bundles
+  const [systemId,    setSystemId]    = useState(null); // saved value
+  const [draftSystem, setDraftSystem] = useState('');   // '' = none
+  useEffect(() => {
+    let alive = true;
+    // getSystems(), not getSheets(): only bundles that DECLARE a compendium can
+    // stamp a world. Offering every character sheet meant picking one that yields
+    // no types, which 400s on save or leaves an empty System rail.
+    Promise.all([api.getSystems(), api.getWorldSystem(worldId)])
+      .then(([list, sys]) => {
+        if (!alive) return;
+        setSystems(Array.isArray(list) ? list : []);
+        const id = sys && !sys.error ? (sys.systemId || null) : null;
+        setSystemId(id);
+        setDraftSystem(id || '');
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [worldId]);
 
   // Seed the General form from the world record once it loads.
   const seedGeneral = (w) => {
@@ -167,6 +192,20 @@ export default function WorldSettingsModal({ worldId, initialSection = 'general'
       const finalWorld = { ...saved, backdrop };
       seedGeneral(finalWorld);
       onSaved && onSaved({ world: finalWorld });
+
+      // Commit a changed system stamp through its own owner-only route. Done
+      // after the world save so a failure here can't lose the name/description
+      // edit, and reported separately because it reshapes the whole System rail.
+      if ((draftSystem || '') !== (systemId || '')) {
+        const r = await api.setWorldSystem(worldId, draftSystem || null);
+        if (r && !r.error) {
+          setSystemId(r.systemId || null);
+          onSaved && onSaved({ system: r });
+        } else if (r && r.error) {
+          window.alert(r.error);
+          setDraftSystem(systemId || '');
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -279,51 +318,89 @@ export default function WorldSettingsModal({ worldId, initialSection = 'general'
     }
   };
 
-  // ---- Broken links (§4h) — moved from WorldDetail ---------------------------
+  // ---- Links & conversion (§4h + Wave C) — moved from WorldDetail ------------
   // Self-fetch every entry (the pool [[wiki]] links resolve against), then derive
   // the danglers the same way WorldDetail does — no stored link table.
   const [allEntries, setAllEntries] = useState([]);
   const [linksLoaded, setLinksLoaded] = useState(false);
 
+  const [allSys, setAllSys] = useState([]);
+
   useEffect(() => {
     if (section !== 'links' || linksLoaded) return;
     let alive = true;
-    api.getLore(worldId).then(all => {
+    // ⚠️ RAW TEXT ON PURPOSE. Everywhere else in this app you read the SERIALIZED
+    // payload, never the stored file — that is the whole discipline (strip at
+    // serialization, verify in the Network payload). This scan INVERTS it, and
+    // deliberately: a fogged `||[[sys:Ankheg]]||` is invisible to a player but
+    // still needs converting, so leaving it out of the worklist would silently
+    // hide work. It is safe here for exactly one reason — this modal is
+    // owner-only, so the payload the owner receives already IS raw. If this
+    // report is ever shown to a non-owner, it must be re-derived server-side.
+    Promise.all([api.getLore(worldId), api.getSysrefEntries(worldId)]).then(([all, sys]) => {
       if (!alive) return;
       setAllEntries(Array.isArray(all) ? all : []);
+      setAllSys(Array.isArray(sys) ? sys : []);
       setLinksLoaded(true);
     }).catch(() => {});
     return () => { alive = false; };
   }, [section, linksLoaded, worldId]);
 
+  // Two resolution pools, matching the renderer: bare `[[X]]` addresses lore,
+  // `[[sys:X]]` addresses the stamped system tier.
   const resolveLink = useMemo(() => {
-    const map = new Map();
-    for (const e of allEntries) {
-      const k = (e.name || '').trim().toLowerCase();
-      if (k && !map.has(k)) map.set(k, e);
-    }
-    return (name) => map.get((name || '').trim().toLowerCase()) || null;
-  }, [allEntries]);
+    const index = (list) => {
+      const map = new Map();
+      for (const e of list) {
+        const k = (e.name || '').trim().toLowerCase();
+        if (k && !map.has(k)) map.set(k, e);
+      }
+      return map;
+    };
+    const lore = index(allEntries);
+    const sys  = index(allSys);
+    return (ns, target) =>
+      (ns === 'sys' ? sys : lore).get((target || '').trim().toLowerCase()) || null;
+  }, [allEntries, allSys]);
 
+  // The conversion tracker. Every unresolved link in the world, SPLIT by what it
+  // was addressing — because the two mean completely different things:
+  //   • a broken LORE link is almost always a typo or a rename → fix the text;
+  //   • a broken SYSTEM link is a statblock nobody has entered yet under the
+  //     world's current system → do the work.
+  // The authored links ARE the worklist: nothing to maintain, always accurate,
+  // and it catches typos on day one. System refs sort by reference count
+  // descending so the most-used mechanics convert first.
   const brokenLinks = useMemo(() => {
     const map = new Map();
-    for (const e of allEntries) {
+    for (const e of [...allEntries, ...allSys]) {
       const fields = e.fields || {};
       for (const key of Object.keys(fields)) {
         const val = fields[key];
         if (typeof val !== 'string' || !val.includes('[[')) continue;
         for (const tok of parseBody(val)) {
           if (tok.type !== 'link') continue;
-          const k = (tok.name || '').trim().toLowerCase();
-          if (!k || resolveLink(tok.name)) continue;
-          if (!map.has(k)) map.set(k, { name: tok.name.trim(), refs: [] });
+          const { ns, target } = splitLinkNamespace((tok.name || '').trim());
+          const k = `${ns || ''}:${(target || '').trim().toLowerCase()}`;
+          if (!target || resolveLink(ns, target)) continue;
+          if (!map.has(k)) map.set(k, { key: k, name: target.trim(), ns: ns || null, refs: [] });
           const rec = map.get(k);
           if (!rec.refs.some(r => r.id === e.id)) rec.refs.push(e);
         }
       }
     }
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [allEntries, resolveLink]);
+    return Array.from(map.values());
+  }, [allEntries, allSys, resolveLink]);
+
+  const brokenLore = useMemo(
+    () => brokenLinks.filter(b => b.ns !== 'sys').sort((a, b) => a.name.localeCompare(b.name)),
+    [brokenLinks],
+  );
+  const unconvertedSys = useMemo(
+    () => brokenLinks.filter(b => b.ns === 'sys')
+      .sort((a, b) => b.refs.length - a.refs.length || a.name.localeCompare(b.name)),
+    [brokenLinks],
+  );
 
   // ---- Proposals (§4.9) — the owner's world-wide pending review queue --------
   // Each pending proposal is shown against the CURRENT raw entry, and the GM can
@@ -481,6 +558,36 @@ export default function WorldSettingsModal({ worldId, initialSection = 'general'
         <textarea value={draftDesc} onChange={e => setDraftDesc(e.target.value)}
           placeholder="A one-line blurb — what is this world?" rows={3}
           style={{ ...inputStyle, resize: 'vertical', fontFamily: 'var(--font-body)' }} />
+      </div>
+
+      {/* Wave C: the ruleset this world's system reference is written for. The
+          reference TYPES (Edges, Powers, Bestiary…) come from the chosen sheet
+          bundle's own schema, so this is what makes the System section appear in
+          the rail. Changing it does NOT rewrite existing entries — each keeps its
+          own stamp, which is what lets a world outlive a system; unconverted
+          references then show up in Broken links as the conversion worklist. */}
+      <div>
+        <label style={labelStyle}>Game system (optional)</label>
+        <select value={draftSystem} onChange={e => setDraftSystem(e.target.value)}
+          style={{ ...inputStyle, cursor: 'pointer' }}>
+          <option value="">None — no system reference</option>
+          {systems.map(sh => (
+            <option key={sh.sheetId} value={sh.sheetId}>
+              {sh.name}{sh.types ? ` — ${sh.types} categories` : ''}
+            </option>
+          ))}
+          {/* A stamp pointing at a bundle that no longer declares a package (or
+              was removed) would otherwise vanish from the list and look like
+              "None" — show it explicitly rather than silently mis-reporting. */}
+          {systemId && !systems.some(sh => sh.sheetId === systemId) && (
+            <option value={systemId}>Current system (bundle unavailable)</option>
+          )}
+        </select>
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', marginTop: '0.3rem', lineHeight: 1.4 }}>
+          Adds a <strong>System</strong> section to the rail for statblocks, edges, powers and gear,
+          linkable from any entry as <code>[[sys:Name]]</code>. Existing entries keep the system they
+          were written for.
+        </div>
       </div>
 
       {/* Backdrop image (optional). Portrait-style upload; the app mutes it
@@ -693,60 +800,90 @@ export default function WorldSettingsModal({ worldId, initialSection = 'general'
     </div>
   );
 
+  // One row renderer for both groups — the existing broken-link card, with the
+  // link rendered in whichever form it was authored so the text on screen matches
+  // the text to search for.
+  const brokenRow = (bl) => (
+    <div key={bl.key} style={{ border: '1px solid var(--border)', borderRadius: '2px', background: 'var(--bg-raised)', padding: '0.6rem 0.75rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+        <span style={{ color: 'var(--text-dim)', textDecoration: 'underline dotted', fontSize: '0.95rem' }}>
+          [[{bl.ns ? `${bl.ns}:` : ''}{bl.name}]]
+        </span>
+        <span style={{ ...eyebrow }}>· {bl.refs.length} ref{bl.refs.length === 1 ? '' : 's'}</span>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+        {bl.refs.map(r => {
+          // Clicking a ref jumps to that entry — but only when a navigator
+          // is available (WorldDetail passes one; the Worlds list has no
+          // open world to navigate, so refs are inert there).
+          const canNav = !!onNavigateEntry;
+          return canNav ? (
+            <button key={r.id} type="button"
+              onClick={() => { onNavigateEntry(r); onClose && onClose(); }}
+              style={{
+                cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)',
+                borderRadius: '2px', color: 'var(--text-accent)', fontFamily: 'var(--font-body)',
+                fontSize: '0.8rem', padding: '0.2rem 0.5rem',
+              }}>
+              {r.name}
+            </button>
+          ) : (
+            <span key={r.id} style={{
+              background: 'var(--bg-input)', border: '1px solid var(--border)',
+              borderRadius: '2px', color: 'var(--text-primary)', fontFamily: 'var(--font-body)',
+              fontSize: '0.8rem', padding: '0.2rem 0.5rem',
+            }}>
+              {r.name}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   const linksBody = (
     !linksLoaded ? (
       <div style={{ color: 'var(--text-dim)', fontSize: '0.85rem' }}>Loading…</div>
     ) : brokenLinks.length === 0 ? (
       <div style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>
-        No broken links — every <code>[[link]]</code> resolves to an entry.
+        No broken links — every <code>[[link]]</code> resolves.
       </div>
     ) : (
-      <>
-        <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: '0.75rem', lineHeight: 1.4 }}>
-          Each name below is linked from a body but has no matching entry. Create it, fix the
-          spelling, or use <code>[[Name|display]]</code> — links resolve by name, so a rename
-          breaks old references on purpose.
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          {brokenLinks.map(bl => (
-            <div key={bl.name} style={{ border: '1px solid var(--border)', borderRadius: '2px', background: 'var(--bg-raised)', padding: '0.6rem 0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
-                <span style={{ color: 'var(--text-dim)', textDecoration: 'underline dotted', fontSize: '0.95rem' }}>
-                  [[{bl.name}]]
-                </span>
-                <span style={{ ...eyebrow }}>· {bl.refs.length} ref{bl.refs.length === 1 ? '' : 's'}</span>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                {bl.refs.map(r => {
-                  // Clicking a ref jumps to that entry — but only when a navigator
-                  // is available (WorldDetail passes one; the Worlds list has no
-                  // open world to navigate, so refs are inert there).
-                  const canNav = !!onNavigateEntry;
-                  return canNav ? (
-                    <button key={r.id} type="button"
-                      onClick={() => { onNavigateEntry(r); onClose && onClose(); }}
-                      style={{
-                        cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)',
-                        borderRadius: '2px', color: 'var(--text-accent)', fontFamily: 'var(--font-body)',
-                        fontSize: '0.8rem', padding: '0.2rem 0.5rem',
-                      }}>
-                      {r.name}
-                    </button>
-                  ) : (
-                    <span key={r.id} style={{
-                      background: 'var(--bg-input)', border: '1px solid var(--border)',
-                      borderRadius: '2px', color: 'var(--text-primary)', fontFamily: 'var(--font-body)',
-                      fontSize: '0.8rem', padding: '0.2rem 0.5rem',
-                    }}>
-                      {r.name}
-                    </span>
-                  );
-                })}
-              </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Unconverted system references — the conversion worklist. Listed FIRST
+            and most-used first, because these are work to do rather than a
+            mistake to correct. */}
+        {unconvertedSys.length > 0 && (
+          <div>
+            <div style={{ ...eyebrow, marginBottom: '0.4rem' }}>
+              Unconverted system references · {unconvertedSys.length}
             </div>
-          ))}
-        </div>
-      </>
+            <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+              These <code>[[sys:Name]]</code> links point at mechanics that don't exist yet under
+              this world's system. Most-referenced first — add each one to the matching System
+              section and every link to it lights up at once. Nothing is broken meanwhile; an
+              unresolved link just renders as plain text.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              {unconvertedSys.map(brokenRow)}
+            </div>
+          </div>
+        )}
+
+        {brokenLore.length > 0 && (
+          <div>
+            <div style={{ ...eyebrow, marginBottom: '0.4rem' }}>Broken lore links · {brokenLore.length}</div>
+            <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: '0.75rem', lineHeight: 1.4 }}>
+              Each name below is linked from a body but has no matching entry. Create it, fix the
+              spelling, or use <code>[[Name|display]]</code> — links resolve by name, so a rename
+              breaks old references on purpose.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              {brokenLore.map(brokenRow)}
+            </div>
+          </div>
+        )}
+      </div>
     )
   );
 

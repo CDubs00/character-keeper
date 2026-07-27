@@ -152,6 +152,18 @@ frontend/build/
 # macOS
 .DS_Store
 
-*_test.js
-*.test.js
+# Tests are SOURCE and ship with the code. `*_test.js` / `*.test.js` used to be
+# ignored here (inherited from a generic template), which quietly kept every
+# backend suite out of version control and left `npm test` broken on a fresh
+# clone — the suites it runs simply weren't there.
 /CLAUDE.md
+
+# Runtime data. /data/* is the real store; backend/data/ is what a locally-run
+# server creates when started from that folder.
+backend/data/
+
+# Stray curl cookie jars from route testing — these hold live session cookies.
+cookies*.txt
+
+# Reference scans / scratch images, not app source.
+/temp/

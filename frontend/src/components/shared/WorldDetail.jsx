@@ -22,13 +22,15 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../../api';
-import { remarkKeep } from '../fog';
+import { remarkKeep, splitLinkNamespace } from '../fog';
 import { formatDate, diffDays, compareDates, calMonths, calEras, calWeekdays, weekdayOf } from '../calendarMath';
 import WorldSettingsModal from './WorldSettingsModal';
 import {
   MapPinIcon, UserIcon, FlagIcon, StarIcon, CalendarIcon, BuildingIcon,
   FileIcon, EyeOffIcon, ClockIcon, ChevronLeftIcon, PlusIcon, MenuIcon, HomeIcon,
-  SearchIcon, GearIcon,
+  SearchIcon, GearIcon, SkullIcon, SwordsIcon, BoxIcon, DiceIcon, LogIcon,
+  BestiaryIcon, SkillIcon, HindrancesIcon, PowersIcon, ArmorIcon,
+  FactionsIcon, LocationIcon, DeitiesIcon, LightningIcon, FlameIcon,
 } from './Icons';
 
 // ---- shared style atoms (local, mirroring Worlds.jsx / CharacterList) --------
@@ -107,9 +109,38 @@ function isExternalHref(href) {
 
 // Pack icon name → glyph. Unknown names fall back to a generic file icon, so a
 // pack can't break the rail by declaring an icon we don't ship.
+// Glyph names a PACK (lore categories) or a BUNDLE (system-reference types) may
+// declare. An unknown name falls back to FileIcon, so a drop-in naming a glyph
+// this app doesn't have degrades to a generic row rather than a blank one.
+//
+// The purpose-drawn set below replaced generic stand-ins: `location` was a map
+// pin, `faction` a flag, `deity` a star, `bestiary` a skull, and armor / skill /
+// hindrance / power had no glyph at all. Note the skull MOVED — it now reads as
+// `hindrance` (a setback), while `bestiary` is the dragon head. A monster type
+// still pointing at `skull` would show the wrong thing, which is why every
+// shipped bundle and the default pack were repointed in the same change.
 const ICONS = {
+  // purpose-drawn
+  bestiary: BestiaryIcon, skill: SkillIcon, hindrance: HindrancesIcon,
+  armor: ArmorIcon, faction: FactionsIcon,
+  location: LocationIcon, deity: DeitiesIcon,
+  // Three glyphs for the same idea. `power` is the generic name bundles declare;
+  // swapping which one it points at re-skins every bundle at once, with no bundle
+  // edit. The other two are ALSO addressable by name, so a bundle can pick per
+  // type (a fire-flavoured system might want `flame` on its spell list while
+  // `power` stays a bolt elsewhere).
+  //   bolt  — simplest silhouette; best at the rail's 17px, and doesn't imply a
+  //           damage type the way a flame implies fire
+  //   flame — reads as magic, but the inner curl softens at small sizes
+  //   comet — the original; its detached spark streaks vanish at 17px
+  power: LightningIcon,
+  bolt:  LightningIcon,
+  flame: FlameIcon,
+  comet: PowersIcon,
+  // general-purpose
   'map-pin': MapPinIcon, user: UserIcon, flag: FlagIcon, star: StarIcon,
   calendar: CalendarIcon, building: BuildingIcon,
+  skull: SkullIcon, swords: SwordsIcon, box: BoxIcon, dice: DiceIcon, log: LogIcon,
 };
 function CatIcon({ name, ...props }) {
   const G = ICONS[name] || FileIcon;
@@ -372,6 +403,12 @@ function LoreMarkdown({ text, resolve, onLink, onEditImage, allowExternal }) {
   );
 }
 
+// How many suggestions the `[[` menu shows at once. The list scrolls, so this is
+// about keeping the popover from swallowing the editor, not about the match count —
+// the footer reports how many more there are so a long list doesn't look truncated
+// by accident.
+const MENU_LIMIT = 8;
+
 // If the caret sits inside an open, still-unclosed `[[` on the current line,
 // return { open, query } where `open` is the index of the `[[` and `query` is
 // what's been typed after it. Returns null once the token is closed (`]]`), the
@@ -397,19 +434,27 @@ function WikiTextarea({ value, onChange, names, style, rows, onUploadImage, allo
   const [uploading, setUploading] = useState(false);
   const [menu, setMenu] = useState(null); // { open, items, index } | null
 
+  // Suggestions fire the moment `[[` is opened — with NO characters typed yet.
+  // Requiring a character first meant the feature was invisible: you had to
+  // already know a name existed to discover that names could be completed, which
+  // defeats the point of an autocomplete over a set the author can't be expected
+  // to remember. An empty query lists everything (capped), and typing filters it.
   const recompute = (val, caret) => {
     const tok = activeWikiToken(val, caret);
-    if (!tok || tok.query.length < 1) { setMenu(null); return; }
+    if (!tok) { setMenu(null); return; }
     const q = tok.query.toLowerCase();
     const items = names
-      .filter(n => n.toLowerCase().includes(q))
+      .filter(n => !q || n.toLowerCase().includes(q))
       .sort((a, b) => {
+        // Prefix matches first, then alphabetical. With an empty query every
+        // entry ties on the first test, so it degrades to plain alphabetical.
         const sa = a.toLowerCase().startsWith(q) ? 0 : 1;
         const sb = b.toLowerCase().startsWith(q) ? 0 : 1;
         return sa - sb || a.localeCompare(b);
-      })
-      .slice(0, 8);
-    setMenu(items.length ? { open: tok.open, items, index: 0 } : null);
+      });
+    setMenu(items.length
+      ? { open: tok.open, items: items.slice(0, MENU_LIMIT), index: 0, total: items.length }
+      : null);
   };
 
   const accept = (name) => {
@@ -545,20 +590,42 @@ function WikiTextarea({ value, onChange, names, style, rows, onUploadImage, allo
           background: 'var(--bg-raised)', border: '1px solid var(--accent)', borderRadius: '2px',
           maxHeight: 220, overflowY: 'auto', boxShadow: '0 6px 18px rgba(0,0,0,0.4)',
         }}>
-          <div style={{ ...eyebrow, padding: '0.35rem 0.6rem' }}>Link to…</div>
-          {menu.items.map((n, i) => (
-            <button key={n} type="button"
-              onMouseDown={e => { e.preventDefault(); accept(n); }}
-              onMouseEnter={() => setMenu(m => ({ ...m, index: i }))}
-              style={{
-                display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
-                padding: '0.4rem 0.6rem', border: 'none',
-                background: i === menu.index ? 'var(--bg-input)' : 'transparent',
-                color: 'var(--text-primary)', fontFamily: 'var(--font-body)', fontSize: '0.9rem',
-              }}>
-              {n}
-            </button>
-          ))}
+          <div style={{ ...eyebrow, padding: '0.35rem 0.6rem' }}>
+            Link to…  <span style={{ textTransform: 'none', letterSpacing: 0 }}>↑↓ Enter · Esc</span>
+          </div>
+          {menu.items.map((n, i) => {
+            // A `sys:` prefix means the stamped system tier. Labelling it keeps
+            // the two namespaces distinguishable in one list, and shows the
+            // prefix is part of the link rather than part of the name.
+            const isSys = n.toLowerCase().startsWith('sys:');
+            return (
+              <button key={n} type="button"
+                onMouseDown={e => { e.preventDefault(); accept(n); }}
+                onMouseEnter={() => setMenu(m => ({ ...m, index: i }))}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem',
+                  width: '100%', textAlign: 'left', cursor: 'pointer',
+                  padding: '0.4rem 0.6rem', border: 'none',
+                  background: i === menu.index ? 'var(--bg-input)' : 'transparent',
+                  color: 'var(--text-primary)', fontFamily: 'var(--font-body)', fontSize: '0.9rem',
+                }}>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {isSys ? n.slice(4) : n}
+                </span>
+                <span style={{
+                  flex: '0 0 auto', fontFamily: 'var(--font-mono)', fontSize: '0.5rem',
+                  letterSpacing: '0.06em', textTransform: 'uppercase',
+                  color: 'var(--text-dim)', border: '1px solid var(--border)',
+                  borderRadius: '999px', padding: '0.05rem 0.35rem',
+                }}>{isSys ? 'System' : 'Lore'}</span>
+              </button>
+            );
+          })}
+          {menu.total > menu.items.length && (
+            <div style={{ color: 'var(--text-dim)', fontSize: '0.7rem', padding: '0.35rem 0.6rem', borderTop: '1px solid var(--border)' }}>
+              +{menu.total - menu.items.length} more — keep typing to narrow
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -628,6 +695,17 @@ export default function WorldDetail({ user, worldId, onBack }) {
   const [activeCat,  setActiveCat]  = useState(null);
   const [entries,    setEntries]    = useState([]);
   const [allEntries, setAllEntries] = useState([]);    // every entry, for [[wiki]] resolution
+  // Wave C — the stamped system-reference tier. `sysTypes` are the reference
+  // types the world's bundle declares (Edges, Powers, Bestiary…); `allSys` is
+  // every system entry, the second pool [[sys:…]] links resolve against. `tier`
+  // says which content tree the middle/right panels are showing. The tier is a
+  // VIEW switch, not a permission: the server gates both trees identically.
+  // (No `systemId` state: nothing in this view needs the stamp itself — the
+  // presence of types is what drives the System rail section, and the picker
+  // that changes it lives in the settings modal.)
+  const [sysTypes,  setSysTypes]  = useState([]);
+  const [allSys,    setAllSys]    = useState([]);
+  const [tier,      setTier]      = useState('lore');   // 'lore' | 'system'
   const [calendar,   setCalendar]   = useState(null);   // §4.11: pack calendar, or null
   // List / Timeline / Calendar for the active category (Timeline: §4.11; Calendar
   // is the month-grid view). `calCursor` is the grid's currently-shown
@@ -800,11 +878,15 @@ export default function WorldDetail({ user, worldId, onBack }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [w, cats, all, cal] = await Promise.all([
+      const [w, cats, all, cal, sys, sysAll] = await Promise.all([
         api.getWorld(worldId), api.getWorldCategories(worldId), api.getLore(worldId),
         api.getWorldCalendar(worldId),   // §4.11: resolved pack calendar, or null
+        api.getWorldSystem(worldId),     // Wave C: the stamp + its reference types
+        api.getSysrefEntries(worldId),   // …and every system entry, for [[sys:…]]
       ]);
       if (!alive) return;
+      setSysTypes(sys && Array.isArray(sys.types) ? sys.types : []);
+      setAllSys(Array.isArray(sysAll) ? sysAll : []);
       setWorld(w && !w.error ? w : null);
       const list = Array.isArray(cats) ? cats : [];
       setCategories(list);
@@ -818,9 +900,14 @@ export default function WorldDetail({ user, worldId, onBack }) {
   }, [worldId]);
 
   // Load the active category's entries (the middle-panel list).
-  const loadEntries = useCallback(async (catId) => {
+  // The middle-panel list. `t` is the TIER, passed explicitly rather than read
+  // from state: this is a useCallback, and closing over `tier` would make every
+  // caller re-created on a tier switch and race a stale value mid-navigation.
+  const loadEntries = useCallback(async (catId, t) => {
     if (!catId) return;
-    const list = await api.getLore(worldId, catId);
+    const list = t === 'system'
+      ? await api.getSysrefEntries(worldId, catId)
+      : await api.getLore(worldId, catId);
     setEntries(Array.isArray(list) ? list : []);
   }, [worldId]);
 
@@ -830,6 +917,14 @@ export default function WorldDetail({ user, worldId, onBack }) {
   const loadAll = useCallback(async () => {
     const list = await api.getLore(worldId);
     setAllEntries(Array.isArray(list) ? list : []);
+  }, [worldId]);
+
+  // The system-reference pool, refreshed after any sysref mutation. Same
+  // contract as loadAll: resolution is by NAME at render time, so this only has
+  // to stay fresh — there is no stored link table on either tier.
+  const loadAllSys = useCallback(async () => {
+    const list = await api.getSysrefEntries(worldId);
+    setAllSys(Array.isArray(list) ? list : []);
   }, [worldId]);
 
   // Load the selected entry's assets (images + attachments). One store per
@@ -851,7 +946,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
   // clear the selected entry — programmatic navigation (a wiki-link jump into
   // another category) sets activeCat AND active together, and must not race with
   // an effect that nulls active. Manual category picks clear it in selectCategory.
-  useEffect(() => { if (activeCat) loadEntries(activeCat); }, [activeCat, loadEntries]);
+  useEffect(() => { if (activeCat) loadEntries(activeCat, tier); }, [activeCat, tier, loadEntries]);
 
   // Refresh the asset store whenever the selected entry changes (id, not object).
   useEffect(() => { loadAssets(active?.id); }, [active?.id, loadAssets]);
@@ -864,7 +959,13 @@ export default function WorldDetail({ user, worldId, onBack }) {
     else setMyProposals([]);
   }, [active?.id, world?.role, loadMyProposals]);
 
-  const catDef = categories.find(c => c.id === activeCat) || null;
+  // The active type definition — from the pack on the lore tier, from the
+  // bundle on the system tier. They are the SAME SHAPE by construction
+  // (systemRef.js emits category-shaped types), which is what lets one list, one
+  // reader and one form serve both trees instead of a parallel set.
+  const catDef = (tier === 'system'
+    ? sysTypes.find(c => c.id === activeCat)
+    : categories.find(c => c.id === activeCat)) || null;
 
   // §4.11: calendar-date fields on the active category. The FIRST is the timeline
   // sort key ("start"); a second (e.g. "end") drives range display. A Timeline
@@ -896,19 +997,41 @@ export default function WorldDetail({ user, worldId, onBack }) {
 
   // Name → entry index for wiki-link resolution (case-insensitive, trimmed).
   // First entry wins on a name collision (disambiguate later via [[Name|display]]).
+  //
+  // TWO pools (Wave C): `[[Durnan]]` addresses lore, `[[sys:Ankheg]]` addresses
+  // the stamped system tier. The namespace is parsed by the SAME closed-set
+  // splitter the server uses (fog.js splitLinkNamespace), so client and server
+  // can't disagree about what is a namespace and what is just a title with a
+  // colon in it. Resolution stays late and by NAME — never a stored entry id —
+  // because that is exactly what makes a system swap re-point every link
+  // automatically instead of leaving a field of dead pointers.
   const resolveLink = useMemo(() => {
-    const map = new Map();
-    for (const e of allEntries) {
-      const k = (e.name || '').trim().toLowerCase();
-      if (k && !map.has(k)) map.set(k, e);
-    }
-    return (name) => map.get((name || '').trim().toLowerCase()) || null;
-  }, [allEntries]);
+    const index = (list) => {
+      const map = new Map();
+      for (const e of list) {
+        const k = (e.name || '').trim().toLowerCase();
+        if (k && !map.has(k)) map.set(k, e);
+      }
+      return map;
+    };
+    const lore = index(allEntries);
+    const sys  = index(allSys);
+    return (raw) => {
+      const { ns, target } = splitLinkNamespace((raw || '').trim());
+      const pool = ns === 'sys' ? sys : lore;
+      return pool.get((target || '').trim().toLowerCase()) || null;
+    };
+  }, [allEntries, allSys]);
 
-  // Names offered by the [[wiki]] autosuggest — exactly the resolvable set.
+  // Names offered by the [[wiki]] autosuggest — exactly the resolvable set, with
+  // system entries offered in their namespaced form so accepting a suggestion
+  // produces a link that actually resolves.
   const entryNames = useMemo(
-    () => Array.from(new Set(allEntries.map(e => (e.name || '').trim()).filter(Boolean))),
-    [allEntries],
+    () => Array.from(new Set([
+      ...allEntries.map(e => (e.name || '').trim()),
+      ...allSys.map(e => `sys:${(e.name || '').trim()}`),
+    ].filter(n => n && n !== 'sys:'))),
+    [allEntries, allSys],
   );
 
   // Merged category lookup (id → { label, baseLabel, hidden, icon, … }). Includes
@@ -919,6 +1042,23 @@ export default function WorldDetail({ user, worldId, onBack }) {
     for (const c of categories) m.set(c.id, c);
     return m;
   }, [categories]);
+
+  // The same lookup for system-reference TYPES. Kept as a SEPARATE map rather
+  // than merged into catById: the two id spaces are independent (a pack is free
+  // to call a category `skill` while a bundle calls a type `skill`), and merging
+  // them would silently label one tier's entries with the other's chip.
+  const sysTypeById = useMemo(() => {
+    const m = new Map();
+    for (const t of sysTypes) m.set(t.id, t);
+    return m;
+  }, [sysTypes]);
+
+  // The type/category definition an entry belongs to, whichever tier it's on.
+  // The `systemId` stamp is the discriminator — only system entries carry one.
+  const defForEntry = useCallback(
+    (e) => (e && e.systemId ? sysTypeById.get(e.categoryId) : catById.get(e.categoryId)) || null,
+    [catById, sysTypeById],
+  );
 
   // World-global search (§4l, extended): scans EVERY lore entry, EVERY campaign's
   // prose, and EVERY session in the world — not just the active category or the
@@ -934,7 +1074,10 @@ export default function WorldDetail({ user, worldId, onBack }) {
     if (!q) return { rows: [], truncated: false };
 
     const entryHits = [];
-    for (const e of allEntries) {
+    // Both tiers. Each list is ALREADY role-serialized by its own endpoint
+    // (canSee-filtered, fog-stripped), so searching them client-side can only
+    // ever match what this viewer was allowed to receive.
+    for (const e of [...allEntries, ...allSys]) {
       const values = [e.name];
       const fields = e.fields || {};
       for (const k of Object.keys(fields)) {
@@ -943,8 +1086,8 @@ export default function WorldDetail({ user, worldId, onBack }) {
       if (values.some(v => typeof v === 'string' && v.toLowerCase().includes(q))) entryHits.push(e);
     }
     entryHits.sort((a, b) => {
-      const la = (catById.get(a.categoryId)?.label || a.categoryId || '').toLowerCase();
-      const lb = (catById.get(b.categoryId)?.label || b.categoryId || '').toLowerCase();
+      const la = (defForEntry(a)?.label || a.categoryId || '').toLowerCase();
+      const lb = (defForEntry(b)?.label || b.categoryId || '').toLowerCase();
       return la.localeCompare(lb) || (a.name || '').localeCompare(b.name || '');
     });
     const entryRows = entryHits.map(e => ({ kind: 'entry', key: `e:${e.id}`, entry: e, snippet: matchSnippet(e, q) }));
@@ -978,7 +1121,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
     const all = [...entryRows, ...campaignRows, ...sessionRows];
     const CAP = 50;
     return { rows: all.slice(0, CAP), truncated: all.length > CAP };
-  }, [search, allEntries, catById, campaigns, campaignOverviews, campaignSessionsAll]);
+  }, [search, allEntries, allSys, defForEntry, campaigns, campaignOverviews, campaignSessionsAll]);
 
   const goToCampaignResult = (campaignId) => { selectCampaign(campaignId); };
   const goToSessionResult = (campaignId, session) => {
@@ -1021,11 +1164,12 @@ export default function WorldDetail({ user, worldId, onBack }) {
     if (isPhone) setPane('entry');
   };
 
-  const selectCategory = (id) => {
+  const selectCategory = (id, whichTier = 'lore') => {
     setActiveCampaign(null);
     setCampDraft(null);
     setCalendarOpen(false);
     setShowHome(false);
+    setTier(whichTier);
     setActiveCat(id);
     setActive(null);
     setMode('read');
@@ -1275,6 +1419,12 @@ export default function WorldDetail({ user, worldId, onBack }) {
     setSessionDraft(null);
     setCalendarOpen(false);
     setShowHome(false);
+    // Which tree does this entry live in? A system entry carries a `systemId`
+    // stamp; a lore entry never does. Switching the tier here is what makes a
+    // [[sys:…]] link from a lore body land on a compendium entry with the right
+    // rail highlighted and the right type definition driving the reader.
+    const entryTier = entry.systemId ? 'system' : 'lore';
+    if (entryTier !== tier) setTier(entryTier);
     if (entry.categoryId !== activeCat) setActiveCat(entry.categoryId);
     setActive(entry);
     setMode('read');
@@ -1343,6 +1493,15 @@ export default function WorldDetail({ user, worldId, onBack }) {
     setMode('propose');
   };
 
+  // Refresh the CURRENT tier's list plus its resolution pool after a mutation.
+  // One helper rather than the old inline pair, so a new call site can't refresh
+  // the lore pool after a system edit and leave [[sys:…]] links resolving stale.
+  const refreshTier = () => Promise.all(
+    tier === 'system'
+      ? [loadEntries(activeCat, 'system'), loadAllSys()]
+      : [loadEntries(activeCat, 'lore'),   loadAll()],
+  );
+
   const save = async () => {
     const name = draft.name.trim();
     if (!name || busy || !catDef) return;
@@ -1358,22 +1517,33 @@ export default function WorldDetail({ user, worldId, onBack }) {
           await loadMyProposals(active.id);
         }
       } else if (mode === 'create') {
-        const res = await api.createLore(worldId, {
-          categoryId: catDef.id, name, fields: draft.fields, visibility: draft.visibility,
-        });
+        // Same body either way — the tiers share a record shape, so only the
+        // endpoint differs. The server owns the `systemId` stamp; we never send it.
+        const res = tier === 'system'
+          ? await api.createSysrefEntry(worldId, {
+              categoryId: catDef.id, name, fields: draft.fields, visibility: draft.visibility,
+            })
+          : await api.createLore(worldId, {
+              categoryId: catDef.id, name, fields: draft.fields, visibility: draft.visibility,
+            });
         if (res && res.id) {
-          await Promise.all([loadEntries(activeCat), loadAll()]);
+          await refreshTier();
           setActive(res);
           setMode('read');
+        } else if (res && res.error) {
+          window.alert(res.error);
         }
       } else if (active) {
-        const res = await api.updateLore(worldId, active.id, {
-          name, fields: draft.fields, visibility: draft.visibility,
-        });
+        const body = { name, fields: draft.fields, visibility: draft.visibility };
+        const res = tier === 'system'
+          ? await api.updateSysrefEntry(worldId, active.id, body)
+          : await api.updateLore(worldId, active.id, body);
         if (res && res.id) {
-          await Promise.all([loadEntries(activeCat), loadAll()]);
+          await refreshTier();
           setActive(res);
           setMode('read');
+        } else if (res && res.error) {
+          window.alert(res.error);
         }
       }
     } finally {
@@ -1383,9 +1553,11 @@ export default function WorldDetail({ user, worldId, onBack }) {
 
   const remove = async (entry) => {
     if (!window.confirm(`Delete "${entry.name}"? This cannot be undone.`)) return;
-    const res = await api.deleteLore(worldId, entry.id);
+    const res = tier === 'system'
+      ? await api.deleteSysrefEntry(worldId, entry.id)
+      : await api.deleteLore(worldId, entry.id);
     if (res && res.ok) {
-      await Promise.all([loadEntries(activeCat), loadAll()]);
+      await refreshTier();
       setActive(null);
       setMode('read');
       if (isPhone) setPane('list');
@@ -1425,6 +1597,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
   // (which snapshots history like any edit, so a resize is itself undoable).
   const applyImageDirective = async (fieldKey, position, alt, src, dir) => {
     if (!active || !position) return;
+    const isSys = tier === 'system';
     const text  = active.fields?.[fieldKey] || '';
     const start = position.start.offset, end = position.end.offset;
     if (typeof start !== 'number' || typeof end !== 'number') return;
@@ -1434,11 +1607,15 @@ export default function WorldDetail({ user, worldId, onBack }) {
     const optimistic = { ...active, fields: nextFields };
     setActive(optimistic);
     setEntries(es => es.map(e => (e.id === active.id ? optimistic : e)));
-    setAllEntries(es => es.map(e => (e.id === active.id ? optimistic : e)));
+    // Update the pool for the tier the entry actually lives in, or a [[sys:…]]
+    // link would keep resolving to the pre-resize copy.
+    const patchPool = es => es.map(e => (e.id === active.id ? optimistic : e));
+    if (isSys) setAllSys(patchPool); else setAllEntries(patchPool);
 
-    const res = await api.updateLore(worldId, active.id, {
-      name: active.name, fields: nextFields, visibility: active.visibility,
-    });
+    const body = { name: active.name, fields: nextFields, visibility: active.visibility };
+    const res = isSys
+      ? await api.updateSysrefEntry(worldId, active.id, body)
+      : await api.updateLore(worldId, active.id, body);
     if (res && res.id) setActive(res);   // reconcile timestamps
   };
 
@@ -1454,7 +1631,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
     if (!window.confirm('Restore this version? The current state is saved to history first, so this is undoable.')) return;
     const res = await api.restoreLore(worldId, historyFor.id, index);
     if (res && res.id) {
-      await Promise.all([loadEntries(activeCat), loadAll()]);
+      await refreshTier();
       setActive(res);
       setHistoryFor(null);
       setMode('read');
@@ -1576,7 +1753,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
       {searchResults.rows.map(row => {
         if (row.kind === 'entry') {
           const e   = row.entry;
-          const cat = catById.get(e.categoryId);
+          const cat = defForEntry(e);
           return resultRow({
             key: row.key, title: e.name, chip: cat?.label || e.categoryId, snippet: row.snippet,
             on: active && active.id === e.id,
@@ -1702,8 +1879,13 @@ export default function WorldDetail({ user, worldId, onBack }) {
         </>
       ) : (
         <>
-          {/* Home — the world's landing page, above the Lore divider. Highlighted
-              like a category when it's the active view. */}
+          {/* Home + Calendar — world-level peers above the Lore divider. They sit in
+              their OWN tight group rather than directly in the rail's flex column:
+              that column uses a 0.75rem gap to separate SECTIONS, so as bare
+              siblings these two were spaced three times as far apart as the
+              category rows below them. Same 0.15rem gap as a category group, so a
+              row is a row wherever it appears; the section spacing is unaffected. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
           <button type="button" onClick={selectHome} style={{
             display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%',
             textAlign: 'left', cursor: 'pointer', padding: '0.5rem 0.6rem',
@@ -1729,6 +1911,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
               <CalendarIcon size={17} /> Calendar
             </button>
           )}
+          </div>
           <div style={{ height: '1px', background: 'linear-gradient(90deg, var(--accent), transparent)' }} />
           <div style={{ ...eyebrow, marginBottom: '0.15rem' }}>Lore</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
@@ -1793,8 +1976,36 @@ export default function WorldDetail({ user, worldId, onBack }) {
             </>
           )}
 
-          {/* Room reserved (structurally) for a future "System" section — not
-              rendered now, so no empty placeholder implying missing function. */}
+          {/* System reference (Wave C) — the section §4d reserved room for. Shown
+              ONLY when the world is stamped with a system whose bundle declares
+              reference types; an unstamped world renders nothing here rather than
+              an empty placeholder implying missing function. These are types from
+              the BUNDLE, not categories from the pack — but they're the same
+              shape, so they render through the same row. */}
+          {sysTypes.length > 0 && (
+            <>
+              <div style={{ height: '1px', background: 'linear-gradient(90deg, var(--accent), transparent)' }} />
+              <div style={{ ...eyebrow, marginBottom: '0.15rem' }}>System</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                {sysTypes.map(t => {
+                  const on = !showHome && tier === 'system' && t.id === activeCat;
+                  return (
+                    <button key={t.id} type="button" onClick={() => selectCategory(t.id, 'system')} style={{
+                      display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%',
+                      textAlign: 'left', cursor: 'pointer', padding: '0.5rem 0.6rem',
+                      background: on ? 'var(--bg-raised)' : 'transparent',
+                      border: 'none', borderLeft: `2px solid ${on ? 'var(--accent)' : 'transparent'}`,
+                      color: on ? 'var(--text-accent)' : 'var(--text-primary)',
+                      fontFamily: 'var(--font-body)', fontSize: '0.95rem',
+                    }}>
+                      <CatIcon name={t.icon} size={17} />
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
           {/* §4.10: the "World settings" rail item moved to a gear button beside
               the search band above (owner-only). Nothing here now. */}
         </>
@@ -2535,7 +2746,19 @@ export default function WorldDetail({ user, worldId, onBack }) {
           {f.type === 'textarea'
             ? <WikiTextarea rows={8} value={draft.fields[f.key] || ''} names={entryNames}
                 onChange={val => setDraft(d => ({ ...d, fields: { ...d.fields, [f.key]: val } }))}
-                onUploadImage={active && canEdit ? uploadImage : undefined}
+                onUploadImage={
+                  // System entries have no per-entry asset store, so their images
+                  // go to the WORLD store — the same one the landing page uses.
+                  // Consequences, both acceptable: uploading is owner-only (that
+                  // route is `requireWorldOwner`, so a coGM would 403 — better to
+                  // hide the button than show one that fails), and the image is
+                  // managed in World settings → World files rather than swept when
+                  // the entry is deleted, exactly as a landing image behaves.
+                  // Upside: no entry id is needed, so images work while CREATING.
+                  tier === 'system'
+                    ? (isOwner ? uploadWorldImage : undefined)
+                    : (active && canEdit ? uploadImage : undefined)
+                }
                 allowExternalLink={allowExternal}
                 style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
             : f.type === 'calendar-date'
@@ -2872,7 +3095,9 @@ export default function WorldDetail({ user, worldId, onBack }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: '0 0 auto' }}>
             <VisibilityPill value={active.visibility} />
-            {canEdit && (
+            {/* Wave C: the system tier has no history sidecar (slice 1 deferred
+                it), so the clock is lore-only rather than a button that 404s. */}
+            {canEdit && tier === 'lore' && (
               <button type="button" onClick={() => openHistory(active)} className="btn-ghost"
                 style={{ padding: 0, width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title="Version history">
                 <ClockIcon size={15} />
@@ -2884,22 +3109,55 @@ export default function WorldDetail({ user, worldId, onBack }) {
         {/* Category-defined fields, excluding subtitle (shown above). Fogged
             fields go through BodyText (fog chips + [[wiki]] links); plain ones
             render as escaped text. */}
-        {(catDef?.fields || []).filter(f => f.key !== 'subtitle').map(f => {
-          const val = active.fields?.[f.key];
-          if (!val) return null;
-          return (
-            <div key={f.key}>
-              <div style={{ ...eyebrow, marginBottom: '0.3rem' }}>{f.label}</div>
-              {f.type === 'textarea'
-                ? <LoreMarkdown text={val} resolve={resolveLink} onLink={goToEntry}
+        {/* Short scalar fields (a statblock's Damage / Range / AP / Cost …) are
+            grouped into a wrapping strip instead of one full-width label+value
+            stack each — a dozen one-word stats used a dozen rows of vertical
+            space. Prose fields still get their own full-width block. Runs of
+            consecutive compact fields group together, so declaration order (the
+            rulebook's order) is preserved. */}
+        {(() => {
+          const shown = (catDef?.fields || [])
+            .filter(f => f.key !== 'subtitle' && active.fields?.[f.key]);
+          const groups = [];
+          shown.forEach(f => {
+            const compact = f.type !== 'textarea';
+            const last = groups[groups.length - 1];
+            if (compact && last?.compact) last.fields.push(f);
+            else groups.push({ compact, fields: [f] });
+          });
+          return groups.map((g, gi) => {
+            if (!g.compact) {
+              const f = g.fields[0];
+              return (
+                <div key={f.key}>
+                  <div style={{ ...eyebrow, marginBottom: '0.3rem' }}>{f.label}</div>
+                  <LoreMarkdown text={active.fields[f.key]} resolve={resolveLink} onLink={goToEntry}
                     allowExternal={allowExternal}
                     onEditImage={canEdit ? ((pos, alt, src, dir) => applyImageDirective(f.key, pos, alt, src, dir)) : undefined} />
-                : f.type === 'calendar-date'
-                ? <div style={{ lineHeight: 1.5, color: 'var(--text-primary)' }}>{formatDate(calendar, val)}</div>
-                : <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, color: 'var(--text-primary)' }}>{val}</div>}
-            </div>
-          );
-        })}
+                </div>
+              );
+            }
+            return (
+              <div key={`strip-${gi}`} style={{
+                display: 'flex', flexWrap: 'wrap', columnGap: '1.4rem', rowGap: '0.5rem',
+                padding: '0.5rem 0.7rem', background: 'var(--bg-raised)',
+                border: '1px solid var(--border)', borderRadius: '2px',
+              }}>
+                {g.fields.map(f => {
+                  const val = active.fields[f.key];
+                  return (
+                    <div key={f.key} style={{ minWidth: 0 }}>
+                      <div style={{ ...eyebrow, fontSize: '0.6rem' }}>{f.label}</div>
+                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.3, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                        {f.type === 'calendar-date' ? formatDate(calendar, val) : val}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          });
+        })()}
 
         {/* Attachments — the manage/delete panel is owner-only (§4.8). Inline
             images embedded in the body above already render for members; this
@@ -2908,7 +3166,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
             text) is hidden here — deriving it from the live field values means
             deleting the inline reference makes the asset reappear automatically,
             with no persisted flag. */}
-        {canEdit && (() => {
+        {canEdit && tier === 'lore' && (() => {
           const bodyText = Object.values(active.fields || {})
             .filter(v => typeof v === 'string').join('\n');
           const usedInline = (a) =>
@@ -2960,16 +3218,21 @@ export default function WorldDetail({ user, worldId, onBack }) {
         {/* §4.9 action row: write/owner get direct Edit (owner also Delete);
             a propose member gets "Suggest an edit" instead. §4.10: denser buttons
             (smaller padding/type, but a ~32px touch target kept). */}
-        {(canEdit || canPropose) && (
+        {(canEdit || (canPropose && tier === 'lore')) && (
           <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.5rem' }}>
             {canEdit && <button className="btn-primary" style={denseBtn} onClick={() => startEdit(active)}>Edit</button>}
-            {canEdit && <button className="btn-danger" style={denseBtn} onClick={() => remove(active)}>Delete</button>}
-            {canPropose && <button className="btn-primary" style={denseBtn} onClick={() => startPropose(active)}>Suggest an edit</button>}
+            {/* Deleting a system entry is owner-only server-side (requireWorldOwner)
+                and there's no history to restore from on that tier, so a coGM
+                isn't shown a button that would 403. */}
+            {(tier === 'lore' ? canEdit : isOwner) &&
+              <button className="btn-danger" style={denseBtn} onClick={() => remove(active)}>Delete</button>}
+            {canPropose && tier === 'lore' &&
+              <button className="btn-primary" style={denseBtn} onClick={() => startPropose(active)}>Suggest an edit</button>}
           </div>
         )}
 
         {/* A propose member's own suggestions for this entry, with status. */}
-        {canPropose && myProposals.length > 0 && (
+        {canPropose && tier === 'lore' && myProposals.length > 0 && (
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
             <div style={{ ...eyebrow, marginBottom: '0.4rem' }}>Your suggestions · {myProposals.length}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -3081,9 +3344,22 @@ export default function WorldDetail({ user, worldId, onBack }) {
         if (payload?.calendar !== undefined) setCalendar(payload.calendar);
         // §4.9: approving a proposal edited an entry — refresh the lists (and the
         // open entry, if it's the one that changed) so the applied change shows.
+        // Wave C: the General section can re-stamp the world's system, which
+        // changes the whole System rail section and the [[sys:…]] pool.
+        if (payload?.system) {
+          setSysTypes(Array.isArray(payload.system.types) ? payload.system.types : []);
+          loadAllSys();
+          // If the System tier was open on a type the new system doesn't declare,
+          // fall back to Home rather than leave the reader on a dead type.
+          if (tier === 'system'
+              && !(payload.system.types || []).some(t => t.id === activeCat)) selectHome();
+        }
         if (payload?.loreChanged) {
           loadAll();
-          if (activeCat) loadEntries(activeCat);
+          // Only the LORE list can be affected by an approval; refreshing it
+          // while the System tier is showing would load lore rows into the
+          // compendium list.
+          if (activeCat && tier === 'lore') loadEntries(activeCat, 'lore');
           if (active?.id) api.getLoreEntry(worldId, active.id).then(e => { if (e && e.id) setActive(e); }).catch(() => {});
         }
       }}
