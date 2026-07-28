@@ -313,6 +313,15 @@ export function PlusIcon(props) {
   );
 }
 
+// pencil — the dice-tray macro "edit mode" toggle
+export function PencilIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M623,101C645,101 666,110 682,126L744,188C777,221 777,274 744,307L317,734C312,739 305,743 298,745L128,795C102,803 78,779 86,753L136,583C138,576 142,569 147,564L574,137C590,121 611,101 623,101ZM623,177L588,212L669,293L704,258C711,251 711,240 704,233L648,177C641,170 630,170 623,177ZM534,266L206,594L177,704L287,675L615,347Z" />
+    </Icon>
+  );
+}
+
 // menu — the world/category drawer hamburger on phones
 export function MenuIcon(props) {
   return (

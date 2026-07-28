@@ -19,7 +19,7 @@ import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, f
 import { createPortal } from 'react-dom';
 import DiceBox from '@3d-dice/dice-box';
 import { DIE_ICONS } from './shared/DiceFaces';
-import { LogIcon, ClearDiceIcon } from './shared/Icons';
+import { LogIcon, ClearDiceIcon, PencilIcon, PlusIcon, ChevronLeftIcon } from './shared/Icons';
 import { parseNotation, evaluateGroup, parseMultiRoll } from './diceParser';
 
 const ASSET_PATH   = '/assets/dice-box/';
@@ -55,6 +55,27 @@ const FADE_MS = 600;
 // Fallback dice tint if the theme accent can't be read.
 const DEFAULT_DICE_COLOR = '#b1402f';
 
+// ── Macro pages ────────────────────────────────────────────────────────────
+// The tray is a fixed-width rail (see railStyle) and must STAY that size, so
+// macros are laid out one-per-row in the same column the dice occupy — no new
+// columns, no wider tray, no popout.
+//
+// SLOTS_PER_PAGE is how many slots a page shows while EDITING. It is not a
+// per-page quota: a page stores only the macros actually filled in, so page 1
+// can hold 2 and page 2 can hold 3. Outside edit mode a page renders only its
+// filled macros, so a half-used page is short rather than padded with dead
+// boxes. These ceilings mirror the server's (MACROS_PER_PAGE_MAX /
+// MACRO_PAGES_MAX in server.js) — keep the pairs in step.
+const SLOTS_PER_PAGE   = 6;
+const MACRO_PAGES_MAX  = 10;
+const MACRO_NAME_MAX   = 40;
+
+// Client-side id for React keys only — the server re-mints anything that isn't
+// a plain token, so this is never security-bearing.
+function macroId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
 // Dice follow the USER's selected app theme, not the bundle. applyTheme() writes
 // the chosen preset's accent onto :root as --accent (Tavern gold, Arcane purple,
 // Ember orange, …); read that live so the dice match the chrome the user picked.
@@ -78,6 +99,17 @@ const DiceTray = forwardRef(function DiceTray(
   const [modifier,      setModifier]      = useState(0);
   const [rolling,       setRolling]       = useState(false);
   const [result,        setResult]        = useState(null); // { groups, modifier, total }
+
+  // ── Macro page state ───────────────────────────────────────────────────────
+  // `page` is the tray's pager position: 0 is the dice page (the original
+  // tray), 1..n are macro pages. macroPages always holds at least one page so
+  // the pager has somewhere to go and a brand-new character can author a macro
+  // without first having to create a page.
+  const [macroPages, setMacroPages] = useState([{ macros: [] }]);
+  const [page,       setPage]       = useState(0);
+  const [editing,    setEditing]    = useState(false);
+  // The macro editor popup: { pageIdx, macroIdx (null = new slot), name, notation, error }
+  const [editor,     setEditor]     = useState(null);
 
   // ── Init the physics box ───────────────────────────────────────────────────
   const initBox = useCallback((scale) => {
@@ -177,13 +209,62 @@ const DiceTray = forwardRef(function DiceTray(
     return () => { cancelled = true; };
   }, [sheetId, onAvailabilityChange]);
 
+  // ── Load this character's macro pages ──────────────────────────────────────
+  // Raw fetch with credentials, matching this file's existing convention (the
+  // schema fetch above and logRoll below) rather than introducing an api.js
+  // import for one more call. The global fetch interceptor in index.js attaches
+  // the CSRF token, so the PUT in saveMacros is covered too.
+  useEffect(() => {
+    if (!characterId) return undefined;
+    let cancelled = false;
+    fetch(`/api/characters/${characterId}/macros`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((pages) => {
+        if (cancelled || !Array.isArray(pages)) return;
+        // Never drop below one page — an empty array from a character that has
+        // never saved macros would otherwise leave the pager with nothing to
+        // show and no way to add the first page.
+        setMacroPages(pages.length ? pages : [{ macros: [] }]);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [characterId]);
+
+  // Whole-tree save. Optimistic: state is already updated by the caller, so a
+  // failed write only costs the last edit (and logs) rather than reverting the
+  // UI under the user's hands mid-edit.
+  const saveMacros = useCallback((pages) => {
+    if (!characterId) return;
+    fetch(`/api/characters/${characterId}/macros`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pages }),
+    }).catch((e) => console.error('[dice] macro save failed:', e));
+  }, [characterId]);
+
+  // Single mutation path for the macro tree: apply, then persist. Every caller
+  // (add / edit / delete / page add / page remove) goes through this so no code
+  // path can change macros in state and forget to write them.
+  const commitMacros = useCallback((next) => {
+    setMacroPages(next);
+    saveMacros(next);
+  }, [saveMacros]);
+
   // ── Escape closes the drawer ───────────────────────────────────────────────
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    // With the macro editor popup open, Escape dismisses the popup rather than
+    // the whole tray — closing the tray out from under an open dialog would
+    // discard an in-progress edit with no way to get back to it.
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (editor) setEditor(null);
+      else onClose?.();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, editor]);
 
   // ── Remove dice with a fade (used by close, Clear, and auto-timeout) ───────
   // dice-box's clear() is instant; to fade, we transition the canvas opacity to
@@ -311,7 +392,11 @@ const DiceTray = forwardRef(function DiceTray(
   //
   // Falls back to pure-JS values (no animation) when the box isn't ready yet —
   // math and logging still work either way.
-  const rollFromNotation = useCallback(async (notationStr) => {
+  // `sourceLabel` is optional and used only by macro buttons: the roll log then
+  // reads "Sword Attack" instead of "2d6+3", which is the whole point of naming
+  // a macro. The notation is still shown on the result card beside the name, so
+  // nothing is hidden — you can always see what a macro actually rolled.
+  const rollFromNotation = useCallback(async (notationStr, sourceLabel) => {
     if (rolling) return { error: 'A roll is already in progress' };
 
     // Parse — detect single vs multi-roll (/ separator)
@@ -424,14 +509,14 @@ const DiceTray = forwardRef(function DiceTray(
         groups:    combinedDice,             // flat dict for single-roll compat
         modifier:  segments.length === 1 ? segments[0].parsed.modifier : 0,
         total:     grandTotal,
-        label:     notationStr,
+        label:     sourceLabel ? `${sourceLabel} · ${notationStr}` : notationStr,
         isMulti:   segments.length > 1,
       });
       logRoll(
         combinedDice,
         segments.length === 1 ? segments[0].parsed.modifier : 0,
         grandTotal,
-        notationStr,
+        sourceLabel || notationStr,
         // Pass segment data for multi-rolls so the log can show per-segment
         // totals; logRoll itself drops this when segments.length <= 1.
         segmentResults,
@@ -445,6 +530,77 @@ const DiceTray = forwardRef(function DiceTray(
       setRolling(false);
     }
   }, [rolling, fadeAndClear, logRoll]);
+
+  // ── Macro actions ──────────────────────────────────────────────────────────
+  const macroPageIdx = page - 1;                 // page 0 is the dice page
+  const onMacroPage  = page > 0;
+  const currentPage  = macroPages[macroPageIdx] || { macros: [] };
+  const totalPages   = macroPages.length + 1;    // dice page + macro pages
+
+  // Clamp the pager if pages disappear (e.g. the last page is deleted, or a
+  // reload returns fewer pages than the one we were sitting on).
+  useEffect(() => {
+    setPage((p) => Math.min(p, macroPages.length));
+  }, [macroPages.length]);
+
+  // Leaving a macro page drops edit mode: edit is a per-visit posture, and
+  // returning to a page later expecting it to be "live" and getting an editor
+  // instead is how you accidentally rewrite a macro you meant to roll.
+  const goToPage = (next) => {
+    setPage(next);
+    setEditing(false);
+    setEditor(null);
+  };
+
+  const saveEditor = () => {
+    if (!editor) return;
+    const name     = editor.name.trim().slice(0, MACRO_NAME_MAX);
+    const notation = editor.notation.trim();
+    if (!notation) { setEditor({ ...editor, error: 'Enter a roll notation' }); return; }
+    // Validate through the SAME parser the roll uses, so a macro that saves is a
+    // macro that rolls — catching it here beats a button that silently does
+    // nothing at the table.
+    try {
+      parseMultiRoll(notation);
+    } catch (e) {
+      setEditor({ ...editor, error: e.message });
+      return;
+    }
+    const next = macroPages.map((pg, i) => {
+      if (i !== editor.pageIdx) return pg;
+      const macros = [...pg.macros];
+      if (editor.macroIdx === null) macros.push({ id: macroId(), name: name || notation, notation });
+      else macros[editor.macroIdx] = { ...macros[editor.macroIdx], name: name || notation, notation };
+      return { ...pg, macros };
+    });
+    commitMacros(next);
+    setEditor(null);
+  };
+
+  const deleteMacro = () => {
+    if (!editor || editor.macroIdx === null) return;
+    const next = macroPages.map((pg, i) => (
+      i === editor.pageIdx
+        ? { ...pg, macros: pg.macros.filter((_, j) => j !== editor.macroIdx) }
+        : pg
+    ));
+    commitMacros(next);
+    setEditor(null);
+  };
+
+  const addPage = () => {
+    if (macroPages.length >= MACRO_PAGES_MAX) return;
+    commitMacros([...macroPages, { macros: [] }]);
+    setPage(macroPages.length + 1);              // land on the page just created
+  };
+
+  // Only an EMPTY page can be removed — deleting a page full of macros from a
+  // 20px button with no undo is a footgun; empty the page first.
+  const removePage = () => {
+    if (macroPages.length <= 1 || currentPage.macros.length) return;
+    commitMacros(macroPages.filter((_, i) => i !== macroPageIdx));
+    setPage(Math.max(1, page - 1));
+  };
 
   // Expose rollFromNotation to CharacterSheet via the forwarded ref.
   // CharacterSheet passes it down to RollLog as onRollCommand.
@@ -476,6 +632,37 @@ const DiceTray = forwardRef(function DiceTray(
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   };
 
+  // Pager / small utility button — deliberately smaller than a die button so
+  // the chrome never competes with the content.
+  const pagerBtnStyle = {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 20, height: 20, padding: 0, borderRadius: 4, cursor: 'pointer',
+    border: '1px solid var(--border)', background: 'transparent',
+    color: 'var(--text-dim)', lineHeight: 1,
+  };
+  // Macro buttons are full-rail-width and single-row: the rail's width is fixed
+  // (requirement — the tray must not grow in any direction), so a long name is
+  // clipped with an ellipsis and the full text lives in `title`.
+  const macroBtnStyle = (isEditing) => ({
+    height: 32, borderRadius: 6, cursor: 'pointer', padding: '0 5px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    border: `1px solid ${isEditing ? 'var(--accent, #b48c3c)' : 'var(--border)'}`,
+    background: 'var(--bg-raised, rgba(255,255,255,0.06))',
+    color: 'var(--text-primary)', fontFamily: 'var(--font-display)',
+    fontWeight: 700, fontSize: '0.62rem', letterSpacing: '0.02em', lineHeight: 1,
+    overflow: 'hidden',
+  });
+  const macroLabelStyle = {
+    display: 'block', width: '100%', textAlign: 'center',
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+  };
+  const macroInputStyle = {
+    width: '100%', boxSizing: 'border-box', padding: '7px 9px',
+    borderRadius: 'var(--radius, 4px)', border: '1px solid var(--border)',
+    background: 'var(--bg-input, var(--bg-raised))', color: 'var(--text-primary)',
+    fontFamily: 'var(--font-mono)', fontSize: '0.8rem',
+  };
+
   // Portal the entire overlay to document.body. .sheet-root sets
   // container-type: inline-size, which makes it a containing block for fixed
   // descendants and (on iOS Safari) lets a fixed WebGL canvas in the same
@@ -489,6 +676,94 @@ const DiceTray = forwardRef(function DiceTray(
 
       {/* The drawer rail */}
       <div style={railStyle} role="dialog" aria-label="Dice tray">
+
+        {/* Pager — page 0 is the dice page, 1..n are macro pages. Always
+            rendered so the macro pages are discoverable; the chevrons wrap
+            around so you can reach either end from either direction in a rail
+            this narrow. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 2, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+          <button type="button" onClick={() => goToPage((page - 1 + totalPages) % totalPages)}
+            title="Previous page" aria-label="Previous page" style={pagerBtnStyle}>
+            <ChevronLeftIcon size={14} />
+          </button>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem',
+            color: 'var(--text-dim)', letterSpacing: '0.04em' }}>
+            {page === 0 ? 'DICE' : `M${page}/${macroPages.length}`}
+          </span>
+          <button type="button" onClick={() => goToPage((page + 1) % totalPages)}
+            title="Next page" aria-label="Next page" style={pagerBtnStyle}>
+            <ChevronLeftIcon size={14} style={{ transform: 'rotate(180deg)' }} />
+          </button>
+        </div>
+
+        {/* ── Macro page ─────────────────────────────────────────────────── */}
+        {onMacroPage ? (
+          <>
+            {currentPage.macros.map((m, i) => (
+              <button key={m.id || i} type="button"
+                onClick={() => (editing
+                  ? setEditor({ pageIdx: macroPageIdx, macroIdx: i, name: m.name, notation: m.notation, error: '' })
+                  : rollFromNotation(m.notation, m.name))}
+                disabled={!editing && rolling}
+                /* title carries the full name + notation: the rail is too
+                   narrow to show a long name, so hover/long-press is how you
+                   confirm what a truncated button actually rolls. */
+                title={`${m.name} — ${m.notation}${editing ? ' (click to edit)' : ''}`}
+                style={macroBtnStyle(editing)}>
+                <span style={macroLabelStyle}>{m.name}</span>
+              </button>
+            ))}
+
+            {/* Empty slots — edit mode only. Outside edit mode a half-filled
+                page renders short rather than padded with dead boxes. */}
+            {editing && Array.from({ length: Math.max(0, SLOTS_PER_PAGE - currentPage.macros.length) }, (_, i) => (
+              <button key={`empty-${i}`} type="button"
+                onClick={() => setEditor({ pageIdx: macroPageIdx, macroIdx: null, name: '', notation: '', error: '' })}
+                title="Add a macro" aria-label="Add a macro"
+                style={{ ...macroBtnStyle(true), borderStyle: 'dashed', color: 'var(--text-dim)' }}>
+                <PlusIcon size={12} />
+              </button>
+            ))}
+
+            {!editing && currentPage.macros.length === 0 && (
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem',
+                color: 'var(--text-dim)', textAlign: 'center', padding: '8px 0', lineHeight: 1.4 }}>
+                No macros — tap ✎
+              </div>
+            )}
+
+            {/* Page add/remove, edit mode only */}
+            {editing && (
+              <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                <button type="button" onClick={addPage} title="Add a macro page"
+                  disabled={macroPages.length >= MACRO_PAGES_MAX}
+                  style={{ ...pagerBtnStyle, opacity: macroPages.length >= MACRO_PAGES_MAX ? 0.4 : 1 }}>
+                  <PlusIcon size={12} />
+                </button>
+                <button type="button" onClick={removePage}
+                  title={currentPage.macros.length ? 'Empty this page first' : 'Remove this page'}
+                  disabled={macroPages.length <= 1 || currentPage.macros.length > 0}
+                  style={{ ...pagerBtnStyle, fontSize: '0.8rem',
+                    opacity: (macroPages.length <= 1 || currentPage.macros.length) ? 0.4 : 1 }}>−</button>
+              </div>
+            )}
+
+            {/* Edit toggle, at the bottom of the macro page */}
+            <button type="button" onClick={() => { setEditing(e => !e); setEditor(null); }}
+              title={editing ? 'Done editing' : 'Edit macros'}
+              aria-pressed={editing}
+              style={{ height: 30, borderRadius: 6, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                border: `1px solid ${editing ? 'var(--accent, #b48c3c)' : 'var(--border)'}`,
+                background: editing ? 'var(--accent-glow, rgba(180,140,60,0.18))' : 'transparent',
+                color: editing ? 'var(--text-accent)' : 'var(--text-dim)',
+                fontFamily: 'var(--font-mono)', fontSize: '0.58rem', letterSpacing: '0.05em' }}>
+              <PencilIcon size={12} />{editing ? 'DONE' : 'EDIT'}
+            </button>
+          </>
+        ) : (
+        <>
         {availableDice.map((d) => {
           const count = pool[d] || 0;
           const Glyph = DIE_ICONS[d];           // icon if we have one for this die
@@ -529,6 +804,8 @@ const DiceTray = forwardRef(function DiceTray(
             opacity: poolCount === 0 ? 0.45 : 1, letterSpacing: '0.05em' }}>
           {rolling ? '…' : 'Roll'}
         </button>
+        </>
+        )}
 
         {/* Bottom utility row: clear dice | open log.
             Ghost-styled (no box) so they read as secondary controls — the boxed
@@ -550,6 +827,76 @@ const DiceTray = forwardRef(function DiceTray(
           </button>
         </div>
       </div>
+
+      {/* Macro editor popup. A centred overlay, NOT an inline panel — the rail
+          is 83px wide and must not grow, so the name/notation form lives above
+          it rather than inside it. */}
+      {editor && (
+        <div onClick={() => setEditor(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 2200,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.55)', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Edit macro"
+            style={{ width: '100%', maxWidth: 320, background: 'var(--bg-surface)',
+              border: '1px solid var(--border)', borderRadius: 8, padding: 16,
+              boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+              display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem',
+              color: 'var(--text-dim)', letterSpacing: '0.08em' }}>
+              {editor.macroIdx === null ? 'NEW MACRO' : 'EDIT MACRO'}
+            </div>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4,
+              fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)' }}>
+              NAME
+              <input autoFocus value={editor.name} maxLength={MACRO_NAME_MAX}
+                onChange={(e) => setEditor({ ...editor, name: e.target.value })}
+                placeholder="Sword Attack" style={macroInputStyle} />
+            </label>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4,
+              fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)' }}>
+              ROLL NOTATION
+              <input value={editor.notation}
+                onChange={(e) => setEditor({ ...editor, notation: e.target.value, error: '' })}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveEditor(); }}
+                placeholder="2d6+3" style={macroInputStyle} />
+            </label>
+
+            {editor.error && (
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem',
+                color: 'var(--danger, #c0554a)' }}>
+                {editor.error}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 2 }}>
+              {editor.macroIdx !== null && (
+                <button type="button" onClick={deleteMacro}
+                  style={{ marginRight: 'auto', padding: '7px 12px', borderRadius: 'var(--radius, 4px)',
+                    cursor: 'pointer', border: '1px solid var(--danger, #c0554a)',
+                    background: 'transparent', color: 'var(--danger, #c0554a)',
+                    fontFamily: 'var(--font-mono)', fontSize: '0.65rem' }}>
+                  Delete
+                </button>
+              )}
+              <button type="button" onClick={() => setEditor(null)}
+                style={{ padding: '7px 12px', borderRadius: 'var(--radius, 4px)', cursor: 'pointer',
+                  border: '1px solid var(--border)', background: 'transparent',
+                  color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: '0.65rem' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={saveEditor}
+                style={{ padding: '7px 14px', borderRadius: 'var(--radius, 4px)', cursor: 'pointer',
+                  border: '1px solid var(--accent, #b48c3c)',
+                  background: 'var(--accent-glow, rgba(180,140,60,0.18))',
+                  color: 'var(--text-accent)', fontFamily: 'var(--font-mono)', fontSize: '0.65rem' }}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating result — near where the dice land (screen centre). */}
       {result && (

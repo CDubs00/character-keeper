@@ -1435,6 +1435,84 @@ function appendRoll(username, id, entry) {
 }
 
 // ---------------------------------------------------------------------------
+// Dice macro pages
+//
+// Per-character, user-authored roll shortcuts shown on the dice tray's macro
+// pages. Same reasoning as the roll log above for why this is its OWN sidecar
+// rather than a bundle-declared sidecarPath or a field on the character:
+//   • It's owned by the dice tray (host/core), so every bundle with dice
+//     enabled gets it with no schema opt-in.
+//   • It's saved by its own endpoint, so it never races the sheet's debounced
+//     autosave (they'd otherwise read-modify-write the same document).
+//
+// Storage is `${id}.macros.json`, so collectCharacterFiles() picks it up for
+// free (rename/delete/export all follow) and findAllCharFiles()'s safeId(stem)
+// check keeps it out of the roster scan — exactly like `${id}.rolls.json`.
+//
+// Shape: an ORDERED array of pages, each an ordered array of macros:
+//   [ { macros: [ { id, name, notation } ] }, … ]
+// Pages hold different numbers of macros by design (page 1 may have 2, page 2
+// three) — the tray renders whatever a page contains plus empty slots in edit
+// mode.
+//
+// The server validates SHAPE and LENGTH only, never notation VALIDITY: the
+// dice notation grammar lives in the frontend parser (diceParser.js) and the
+// backend has no copy. The editor rejects bad notation before saving; a
+// hand-crafted bad string is caught at roll time and simply fails that roll,
+// which is a strictly local, non-destructive failure. Duplicating the grammar
+// server-side would be a second source of truth to keep in sync — the exact
+// drift the mirrored-module notes elsewhere in this repo warn about.
+// ---------------------------------------------------------------------------
+const MACRO_PAGES_MAX     = 10;
+const MACROS_PER_PAGE_MAX = 12;
+const MACRO_NAME_MAX      = 40;
+const MACRO_NOTATION_MAX  = 120;
+
+function macrosFilePath(username, id) {
+  return path.join(userCharDir(username), `${id}.macros.json`);
+}
+
+function readMacros(username, id) {
+  const p = macrosFilePath(username, id);
+  if (!fs.existsSync(p)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    // Tolerate a corrupt sidecar: log and fall back to "no macros" rather than
+    // failing the tray open. Same posture as every other sidecar read.
+    console.error(`[macros] Failed to parse ${p}: ${e.message}`);
+    return [];
+  }
+}
+
+// Defensive normaliser — the client is not trusted to send a well-formed tree.
+// Anything unrecognised is dropped rather than stored, so a malformed save can
+// never poison a later read.
+function cleanMacroPages(raw) {
+  if (!Array.isArray(raw)) return null;
+  return raw.slice(0, MACRO_PAGES_MAX).map((page) => {
+    const macros = Array.isArray(page?.macros) ? page.macros : [];
+    return {
+      macros: macros
+        .filter(m => m && typeof m === 'object'
+          && typeof m.name === 'string' && typeof m.notation === 'string'
+          && m.notation.trim())
+        .slice(0, MACROS_PER_PAGE_MAX)
+        .map(m => ({
+          // The id is a client-side React key only, so a client-supplied one is
+          // harmless — but re-mint anything that isn't a plain safe token so a
+          // crafted value can never reach a filesystem or DOM-sensitive path.
+          id:       (typeof m.id === 'string' && /^[a-zA-Z0-9_-]{1,32}$/.test(m.id))
+                      ? m.id : generateToken(8),
+          name:     m.name.trim().slice(0, MACRO_NAME_MAX),
+          notation: m.notation.trim().slice(0, MACRO_NOTATION_MAX),
+        })),
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Express setup
 // ---------------------------------------------------------------------------
 
@@ -2824,6 +2902,27 @@ app.post('/api/characters/:id/rolls', requireAuth, validId, requireCharOwner, (r
   };
 
   res.json(appendRoll(found.username, req.params.id, entry));
+});
+
+// GET /api/characters/:id/macros — the dice-tray macro pages.
+// Owner-or-admin, matching the roll log: macros are the owner's private
+// shortcuts, not part of the sheet a campaign GM can view.
+app.get('/api/characters/:id/macros', requireAuth, validId, requireCharOwner, (req, res) => {
+  const found = req.foundChar;
+  res.json(readMacros(found.username, req.params.id));
+});
+
+// PUT /api/characters/:id/macros   body: { pages: [ { macros: [...] } ] }
+// Whole-document replace, not a per-macro CRUD surface. The payload is a
+// handful of short strings, the editor already holds the entire tree in state,
+// and reordering/adding/removing a page are all just "the tree changed" — so
+// one atomic write is simpler than five endpoints and can't half-apply.
+app.put('/api/characters/:id/macros', requireAuth, validId, requireCharOwner, (req, res) => {
+  const found = req.foundChar;
+  const pages = cleanMacroPages(req.body?.pages);
+  if (!pages) return res.status(400).json({ error: 'pages must be an array' });
+  fs.writeFileSync(macrosFilePath(found.username, req.params.id), JSON.stringify(pages, null, 2));
+  res.json(pages);
 });
 
 // ---------------------------------------------------------------------------
