@@ -9,3 +9,4 @@ cookies*.txt
 CLAUDE.md
 *_test.js
 *.test.js
+/temp

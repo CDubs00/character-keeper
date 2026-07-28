@@ -1,10 +1,10 @@
 {
   "name": "CharacterKeeper-backend",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node loreAccess_test.js && node campaignAccess_test.js && node sessionAccess_test.js && node calendarMath_test.js && node worldCalendar_test.js && node systemRef_test.js && node mirrorParity_test.js && node sysrefRoutes_test.mjs && node categoryConfig_test.mjs"
+    "test": "node loreAccess_test.js && node campaignAccess_test.js && node sessionAccess_test.js && node calendarMath_test.js && node worldCalendar_test.js && node systemRef_test.js && node mirrorParity_test.js && node sysrefRoutes_test.mjs && node categoryConfig_test.mjs && node diceMacros_test.mjs"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

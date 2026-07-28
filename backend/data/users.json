@@ -1,0 +1,10 @@
+[
+  {
+    "username": "testuser",
+    "password": "$2b$12$VTb6Hl0uRPF8.4aSFXlMCeotbQI2xa4.syWYcVRdNTNpb5JDeitDm",
+    "admin": false,
+    "gm": false,
+    "player": true,
+    "tokenVersion": 1
+  }
+]
