@@ -1,0 +1,109 @@
+{
+  "packs/default/categories.json": [
+    "12e1407cc5994b44347bb4f27bd6bc63f87a62ec9b937a41c486c3c08b75fb75",
+    "f8966e5b043434cf431cb1ff8e8b8bfa8542a7852198a7ef546d6df3acde4244",
+    "a29d72f00edad95d48deeedf36338c1912cad83e4e479d5f1bc418c7dd2f2f3c"
+  ],
+  "packs/default/manifest.json": [
+    "3855625c6a64133de158e397e38819327b029874beb9332ed8b147e66d9ac671",
+    "8fe731a5841c07d96fa12a333416dae8aac3842b9a33c5a9fae8fcfcad503fb9"
+  ],
+  "bundles/adnd2e/logo.png": [
+    "b1fcd2bb7cc2b1cd093f2c9af846015fb100ffb8cb3ae0144114b6c5a4f31e71",
+    "bbd23b7412c1a6403bd31b971609bce0804a6bb4923991e76fa9bdb3ae714dff"
+  ],
+  "bundles/adnd2e/manifest.json": [
+    "6a35c16ce2dacbaa1391f52f5dc14142f3fa35813a2f79a7f582ebd709eaa6f2",
+    "56defa52326668c15dfed3a7b747d951198b058f7885af0b88ab173b67b1b301"
+  ],
+  "bundles/adnd2e/schema.json": [
+    "e2abeca2ad7f7ecd02056b90ea119672afc37a22e28c7f631483ad885e6e2109",
+    "6cd63a0cc2ad24aa2751a798b7059a0f85f1bda4c9a56f5b245e02cb2ad1b764"
+  ],
+  "bundles/adnd2e/sheet.html": [
+    "02a269d5aa250c432a0a00745c8e90a89f3a65ebd2c4bb488d7a47ea0eef908b",
+    "66306a38bcd194224b6aea2b226fd954e7664fa7668f60bb8613e975f094cd60"
+  ],
+  "bundles/adnd2e/theme.css": [
+    "3081cbb7cc1273ebc23fd41fd8c85840fc3e464eb681284cf2d68a71ca73e542",
+    "955eb3a42d5cb75d0f7d627f4761235a6f705f740c9ba644ee61547b57a285da",
+    "004c942ffe7197ed0e564ba68307153bd80a3feb7f3f9cf7d77321bd912066af",
+    "e48823bc0fe866e1042efcf1f567798c8f5a94cd22d629a729f6ec3393632c48"
+  ],
+  "bundles/dnd5e/logo.png": [
+    "340fe2bf9181c053e5e68be87d564066bb0fdb4d250d84dd2d26f740a7097cdb",
+    "a39a185e2ec8d2ce60cb0bfd16ed0ca66707ada7296ee7a68aa79c8c0e9fc6d3"
+  ],
+  "bundles/dnd5e/manifest.json": [
+    "f35470a4540392c3af4d10be67939e2ac14bf883642a6bda357eb2ada4ecb314"
+  ],
+  "bundles/dnd5e/schema.json": [
+    "915341091ba2702d3bc0a7cc01828859ad9b2784171f48e54acacea328f00baf"
+  ],
+  "bundles/dnd5e/sheet.html": [
+    "66d0002a4696279f378c0d2cf617bb44b9503b69db07c08ac3e72365315c2763"
+  ],
+  "bundles/dnd5e/theme.css": [
+    "aa6e3ebbc01a76c6a5ba83436d742a51931be1601d8e3ec6b2bd8aeafbe723a2",
+    "c0599d6318403fd20b9ce4c96a321fe2bc2e78f01a9eb24136957b7ccbe14b13",
+    "9f53bb2a85b76345d913ff39b568a9abf0f65069f83f8a6a4727a33c601556df",
+    "98e954dea636de817d0f3ff9a12cc1136c966f35570df6b6b570c916082c0982"
+  ],
+  "bundles/dnd5e24/manifest.json": [
+    "10cbecadbfa38e21465e42ba2f7a2875f8a980c1c2afe153a470c53206c05407",
+    "47da2aab41223bfdb9194337f873818407380f39bc1dda74acdd03ed3da6722a"
+  ],
+  "bundles/dnd5e24/schema.json": [
+    "eff192375eaeddec1b19e7cfb266c59847a2f00ffe9d13256872f9b4a786f3f8",
+    "a6290e29382d40bf8e1d4bcf58c3a09c6d3f16d75ebbfa9a59c84d1a5f934e55",
+    "c5daba146eceee0a9f6ce95cec438b0542e64a0c58295ad562352fcd949d409a"
+  ],
+  "bundles/dnd5e24/sheet.html": [
+    "9c5229543253871229977fda5bcb729eb031d4660f9b56ca71c3f4a03780ef0a"
+  ],
+  "bundles/dnd5e24/theme.css": [
+    "7fcece09b3658fc5c2989d0370f7392dfc8ef48cbf67dc65a068617538d685a1"
+  ],
+  "bundles/risus-core/manifest.json": [
+    "53471ac9d91b39b17033e53d6155f7d9e80be6922c47b61bf07f8a0645838c4c",
+    "8d7dad6ba35cbfbb9a651df585a8c4c0829590a29096aa787062c9896d9e318b",
+    "40db4d87e2ac33e524a68924d1d46aa973065c96c2442df51bfe87353c1a3a93"
+  ],
+  "bundles/risus-core/schema.json": [
+    "b1340d37f2d1b0d24dbd86227c4e30412f10c50720daae8794edd9af266e6bee",
+    "e20b37f49ded85ebd7e27581f0d1caab6f42c9b9a014c7e21c46bd265167ad17",
+    "06e0402dff58b076fe3bb8da3905577a884de49f6014231aa8f5adf5854ba2c9",
+    "421e731794f02f4a279eb4aa268aa79ddbe68b923f3098985598fe5c02079397",
+    "8222ab0dc63e9204fd0212d80a23fefbd515f97941f8ba0f5be3dfefa4114c8b",
+    "3ca434e75f8ffdcc7cf9cb8df4f2b24b97888a62449400b62de3980da32af46b"
+  ],
+  "bundles/risus-core/sheet.html": [
+    "9cd4ede8d2b8825004b2fc61a8021edd22c04cbdaeb3dec2dec5f2c64ae46bee",
+    "5ab663b626121555ec006bd2360d325702717a7595e2cf98a432730646d75a9a",
+    "227574100fd0a0f1b23042c581d88b024796b18756347ffd8f963283daafafd8",
+    "12770a25ed1cdfc56a4b01759bbe0b3274a031c4daac9f3f2c0e3bdcb3cd5eeb"
+  ],
+  "bundles/risus-core/theme.css": [
+    "ccf7d357cd7fb2e7af218343dff01955edff3d060b3cc9d421f62d66ee80b9a5",
+    "5166583eb467339b2f70205a6a36e035bff34caf0af943ab8247eb8bc40497eb",
+    "c22e599b7f37c3838ea344cf663ebdcc58ed1e7c40d1b788a4cc42f73a6145d4",
+    "0b3fdd8098b99d21ed64d40c2e5e66e9eea3ad2881effa6256ba29230607eed1"
+  ],
+  "bundles/savage-pathfinder/manifest.json": [
+    "8b24f2e5979500dd0a4177e21c6d20457b9757a456d16b69f6afe10a47283ba4",
+    "193718dfb161212ac25437b14c7de9541551abaf799f26f553bafd0ed7b0297f",
+    "bd229ca05f3f2041a5aa30d8e4e2d6b06f9a6cab2ec41739480a9668abba6b1a"
+  ],
+  "bundles/savage-pathfinder/schema.json": [
+    "af867cc4d2e2a31e91845483aebbf8651711e9f91a65560b1d840cc3c0abcfd9",
+    "85e9286597f60be0337b7d9e1539368ce72d1ab4c70da7e10f28cef94db7ab74",
+    "6815997c24e54625bf4a02082d60c737cdaf4bfbf89158325bd29aed1c9d8576"
+  ],
+  "bundles/savage-pathfinder/sheet.html": [
+    "f5eb6009005b4c3eec5f7171e7cc6b0f10cbf66265e317268f4cbedfd3105ed3"
+  ],
+  "bundles/savage-pathfinder/theme.css": [
+    "f7fe4ed9ff4764e3c704a8c6f20ae9f86d0e7ec443865bf7d2922b25e92ea708",
+    "0d4daf7246ca5e41b32eb06c11ca28ebf57336d0ee524854f674cc87d9f7bcfe"
+  ]
+}

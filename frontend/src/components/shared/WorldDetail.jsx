@@ -30,7 +30,11 @@ import {
   FileIcon, EyeOffIcon, ClockIcon, ChevronLeftIcon, PlusIcon, MenuIcon, HomeIcon,
   SearchIcon, GearIcon, SkullIcon, SwordsIcon, BoxIcon, DiceIcon, LogIcon,
   BestiaryIcon, SkillIcon, HindrancesIcon, PowersIcon, ArmorIcon,
-  FactionsIcon, LocationIcon, DeitiesIcon, LightningIcon, FlameIcon,
+  FactionsIcon, LocationIcon, DeitiesIcon, PlanesIcon, LightningIcon, FlameIcon,
+  ClassIcon, SubclassIcon, SpeciesIcon, FeatIcon, BackgroundIcon, AdventuringGearIcon,
+  EdgeIcon, PowerIcon, AbilityIcon,
+  MagicItemIcon, MonsterIcon, GlossaryIcon, SpellIcon, VehicleIcon,
+  DomainIcon, HouseRulesIcon,
 } from './Icons';
 
 // ---- shared style atoms (local, mirroring Worlds.jsx / CharacterList) --------
@@ -122,18 +126,28 @@ function isExternalHref(href) {
 const ICONS = {
   // purpose-drawn
   bestiary: BestiaryIcon, skill: SkillIcon, hindrance: HindrancesIcon,
-  armor: ArmorIcon, faction: FactionsIcon,
-  location: LocationIcon, deity: DeitiesIcon,
-  // Three glyphs for the same idea. `power` is the generic name bundles declare;
+  armor: ArmorIcon, faction: FactionsIcon, edge: EdgeIcon, ability: AbilityIcon,
+  // `ancestry` and `species` are the same glyph under two names — the two
+  // rulebooks' words for one idea, so either bundle reads naturally.
+  ancestry: SpeciesIcon,
+  location: LocationIcon, deity: DeitiesIcon, plane: PlanesIcon,
+  // system-reference glyphs (5e 2024 set; addressable by any bundle)
+  class: ClassIcon, subclass: SubclassIcon, species: SpeciesIcon,
+  feat: FeatIcon, background: BackgroundIcon,
+  gear: AdventuringGearIcon, 'magic-item': MagicItemIcon,
+  monster: MonsterIcon, glossary: GlossaryIcon, spell: SpellIcon,
+  vehicle: VehicleIcon, domain: DomainIcon, houserule: HouseRulesIcon,
+  // Four glyphs for the same idea. `power` is the generic name bundles declare;
   // swapping which one it points at re-skins every bundle at once, with no bundle
-  // edit. The other two are ALSO addressable by name, so a bundle can pick per
-  // type (a fire-flavoured system might want `flame` on its spell list while
-  // `power` stays a bolt elsewhere).
+  // edit. The others are ALSO addressable by name, so a bundle can pick per type
+  // (a fire-flavoured system might want `flame` on its spell list while `power`
+  // stays the clawed burst elsewhere).
+  //   power — the clawed arcane burst; the default
   //   bolt  — simplest silhouette; best at the rail's 17px, and doesn't imply a
   //           damage type the way a flame implies fire
   //   flame — reads as magic, but the inner curl softens at small sizes
   //   comet — the original; its detached spark streaks vanish at 17px
-  power: LightningIcon,
+  power: PowerIcon,
   bolt:  LightningIcon,
   flame: FlameIcon,
   comet: PowersIcon,
