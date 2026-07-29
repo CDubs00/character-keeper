@@ -20,7 +20,7 @@
   {
     "id": "planes",
     "label": "Planes",
-    "icon": "flame",
+    "icon": "plane",
     "fields": [
       {
         "key": "subtitle",

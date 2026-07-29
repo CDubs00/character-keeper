@@ -199,20 +199,20 @@
   },
 
   "sysrefIcons": {
-    "class": "user",
-    "subclass": "skill",
-    "magic-item": "flame",
-    "background": "flag",
-    "species": "faction",
-    "feat": "star",
+    "class": "class",
+    "subclass": "subclass",
+    "magic-item": "magic-item",
+    "background": "background",
+    "species": "species",
+    "feat": "feat",
     "weapon": "swords",
     "armor": "armor",
-    "gear": "box",
-    "spell-ref": "power",
-    "monster": "bestiary",
-    "vehicle": "building",
-    "glossary": "dice",
-    "rule": "log"
+    "gear": "gear",
+    "spell-ref": "spell",
+    "monster": "monster",
+    "vehicle": "vehicle",
+    "glossary": "glossary",
+    "rule": "houserule"
   },
 
   "emptyClass":      { "name": "", "primary_ability": "", "hit_die": "", "saving_throws": "", "skill_proficiencies": "", "weapon_proficiencies": "", "armor_training": "", "starting_equipment": "", "progression": "", "description": "" },

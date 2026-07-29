@@ -190,6 +190,14 @@
     "modifiers": ""
   },
   "emptyDomain": { "name": "", "aspects": "", "deities": "", "available_powers": "", "description": "" },
+  "emptyAncestry": {
+    "name": "",
+    "languages": "",
+    "age_range": "",
+    "size": "",
+    "abilities": "",
+    "description": ""
+  },
   "emptyAbility": {
     "name": "",
     "description": ""
@@ -227,6 +235,7 @@
     "sessions"
   ],
   "sysrefTypes": [
+    "ancestry",
     "skill",
     "edge",
     "hindrance",
@@ -240,6 +249,7 @@
     "rule"
   ],
   "sysrefLabels": {
+    "ancestry": "Ancestries",
     "skill": "Skills",
     "edge": "Edges",
     "hindrance": "Hindrances",
@@ -253,19 +263,24 @@
     "rule": "House Rules"
   },
   "sysrefIcons": {
+    "ancestry": "ancestry",
     "skill": "skill",
-    "edge": "star",
+    "edge": "edge",
     "hindrance": "hindrance",
-    "gear": "box",
+    "gear": "gear",
     "armor": "armor",
     "weapon": "swords",
     "power": "power",
-    "domain": "deity",
-    "ability": "star",
+    "domain": "domain",
+    "ability": "ability",
     "creature": "bestiary",
-    "rule": "log"
+    "rule": "houserule"
   },
   "sysrefFields": {
+    "ancestry": {
+      "abilities":   { "type": "textarea", "label": "Ancestral Abilities" },
+      "description": "textarea"
+    },
     "skill": {
       "description": "textarea"
     },

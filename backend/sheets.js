@@ -10,6 +10,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const seedSync = require('./seedSync');
 
 // ---------------------------------------------------------------------------
 // Registry helpers
@@ -23,20 +24,18 @@ function bundlesDir(dataDir) {
   return process.env.BUNDLES_DIR || path.join(dataDir, 'sheets');
 }
 
-// Copy any built-in bundle that isn't already in the live bundles dir.
-// Never overwrites one the user already has, so drop-ins and edits persist.
+// Seed built-in bundles, and RECONCILE them on later boots when we ship a newer
+// version — see seedSync.js for the full rule. A shipped file is replaced only
+// when it still hashes to what we last wrote, so a bundle the user edited (or
+// authored themselves) is never clobbered; the update is parked as `<file>.new`
+// and logged instead.
+//
+// This previously bailed on `if (fs.existsSync(dest)) continue`, which is why a
+// bundle gaining `sysrefTypes` (Wave C) never became a system on an install that
+// already had that bundle.
 function seedBundles(dataDir) {
-  const target  = bundlesDir(dataDir);
   const seedDir = process.env.SEED_BUNDLES_DIR || '/app/seed-bundles';
-  if (!fs.existsSync(seedDir)) return;
-  fs.mkdirSync(target, { recursive: true });
-  for (const entry of fs.readdirSync(seedDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;          // bundles are folders
-    const dest = path.join(target, entry.name);
-    if (fs.existsSync(dest)) continue;           // already there — leave it alone
-    fs.cpSync(path.join(seedDir, entry.name), dest, { recursive: true });
-    console.log(`Seeded built-in bundle: ${entry.name}`);
-  }
+  return seedSync.syncSeedDir('bundles', seedDir, bundlesDir(dataDir), dataDir);
 }
 
 function loadRegistry(dataDir) {
@@ -135,6 +134,29 @@ function scanBundles(dataDir) {
     // Already registered — oldest entry wins, skip newcomer
     if (registeredIds.has(manifest.sheetId)) {
       const existing = registry.find(r => r.sheetId === manifest.sheetId);
+
+      // ...but if THIS is the folder that owns the registration, refresh the
+      // metadata we merely COPIED from its manifest. seedSync can now update a
+      // bundle in place, so a registry pinned at the version registered on first
+      // boot would show a stale name/version in the admin list and the system
+      // picker forever.
+      //
+      // Only the derived fields move. sheetId/folder/registeredAt are identity,
+      // and `enabled` is USER state — an admin who disabled a bundle must not
+      // find it re-enabled by a content update.
+      if (existing && existing.folder === folder) {
+        const version = manifest.version || '0.0.0';
+        const author  = manifest.author  || 'Unknown';
+        if (existing.name !== manifest.name || existing.version !== version || existing.author !== author) {
+          console.log(`[sheets] Refreshed registry for '${manifest.name}': v${existing.version} → v${version}`);
+          existing.name    = manifest.name;
+          existing.version = version;
+          existing.author  = author;
+          saveRegistry(dataDir, registry);
+        }
+        continue;
+      }
+
       const msg = `Sheet '${manifest.name}' (${manifest.sheetId}) already registered on ${existing?.registeredAt} — ignoring '${folder}/'`;
       console.log(`[sheets] ${msg}`);
       summary.skipped.push({ folder, reason: msg });

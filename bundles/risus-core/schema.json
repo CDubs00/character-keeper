@@ -81,7 +81,7 @@
   "sysrefIcons": {
     "item": "box",
     "opponent": "bestiary",
-    "rule": "log"
+    "rule": "houserule"
   },
   "sysrefFields": {
     "opponent": {

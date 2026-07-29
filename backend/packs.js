@@ -18,6 +18,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const seedSync = require('./seedSync');
 
 // Where live (user-editable) packs live, under the data mount.
 function packsDir(dataDir) {
@@ -48,7 +49,7 @@ function seedPacksDir() {
 // a [[link]] out to the stamped tier, exactly as a deity links to its domains.
 const FALLBACK_CATEGORIES = [
   { id: 'locations',     label: 'Locations',     icon: 'location', fields: baseFields() },
-  { id: 'planes',        label: 'Planes',        icon: 'flame',    fields: planeFields() },
+  { id: 'planes',        label: 'Planes',        icon: 'plane',    fields: planeFields() },
   { id: 'npcs',          label: 'NPCs',          icon: 'user',     fields: baseFields() },
   { id: 'factions',      label: 'Factions',      icon: 'faction',  fields: baseFields() },
   { id: 'deities',       label: 'Deities',       icon: 'deity',    fields: baseFields() },
@@ -70,21 +71,17 @@ function planeFields() {
   ];
 }
 
-// Copy any built-in pack that isn't already in the live packs dir. Never
-// overwrites one the user already has, so edits and drop-ins persist — exactly
-// like seedBundles() in sheets.js.
+// Seed built-in packs, and RECONCILE them on later boots when we ship a newer
+// version — see seedSync.js for the full rule. The short version: a shipped
+// file is replaced only when it still hashes to what we last wrote, so a pack
+// the user edited (or dropped in themselves) is never clobbered; the update is
+// parked as `<file>.new` and logged instead.
+//
+// This previously bailed on `if (fs.existsSync(dest)) continue`, which meant a
+// content update — a new category, a renamed icon — never reached an install
+// that already had the pack.
 function seedPacks(dataDir) {
-  const target  = packsDir(dataDir);
-  const seedDir = seedPacksDir();
-  if (!fs.existsSync(seedDir)) return;
-  fs.mkdirSync(target, { recursive: true });
-  for (const entry of fs.readdirSync(seedDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;           // packs are folders
-    const dest = path.join(target, entry.name);
-    if (fs.existsSync(dest)) continue;            // already there — leave it alone
-    fs.cpSync(path.join(seedDir, entry.name), dest, { recursive: true });
-    console.log(`[packs] Seeded built-in pack: ${entry.name}`);
-  }
+  return seedSync.syncSeedDir('packs', seedPacksDir(), packsDir(dataDir), dataDir);
 }
 
 // Boot-time entry point, called once from server.js like sheets.scanBundles().

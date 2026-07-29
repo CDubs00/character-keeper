@@ -10,6 +10,11 @@ COPY backend/ ./
 COPY frontend/build ./frontend/build
 COPY bundles/ ./seed-bundles
 COPY packs/ ./seed-packs
+# Hashes of every version of the seed content we have ever shipped. seedSync.js
+# uses it to tell "this file is just an old release of ours" (safe to update)
+# from "the user edited this" (leave it alone) on installs that predate the
+# seed ledger. Regenerate with `npm run seed:hashes` when seed content changes.
+COPY seed-known-hashes.json ./seed-known-hashes.json
 
 RUN mkdir -p /data
 ENV DATA_DIR=/data

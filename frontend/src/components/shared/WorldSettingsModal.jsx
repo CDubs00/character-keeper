@@ -29,6 +29,7 @@ import { api } from '../../api';
 import { parseBody, splitLinkNamespace } from '../fog';
 import {
   MapPinIcon, UserIcon, FlagIcon, StarIcon, CalendarIcon, BuildingIcon,
+  LocationIcon, FactionsIcon, PlanesIcon,
   FileIcon, EyeOffIcon,
 } from './Icons';
 
@@ -52,6 +53,7 @@ const eyebrow = {
 const ICONS = {
   'map-pin': MapPinIcon, user: UserIcon, flag: FlagIcon, star: StarIcon,
   calendar: CalendarIcon, building: BuildingIcon,
+  location: LocationIcon, faction: FactionsIcon, plane: PlanesIcon,
 };
 function CatIcon({ name, ...props }) {
   const G = ICONS[name] || FileIcon;
