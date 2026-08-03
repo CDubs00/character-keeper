@@ -21,7 +21,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api } from '../../api';
+import { api, worldApi } from '../../api';
 import { remarkKeep, splitLinkNamespace } from '../fog';
 import { formatDate, diffDays, compareDates, calMonths, calEras, calWeekdays, weekdayOf } from '../calendarMath';
 import WorldSettingsModal from './WorldSettingsModal';
@@ -364,7 +364,12 @@ function softBreaks(text) {
   return typeof text === 'string' ? text.replace(/\n/g, '  \n') : text;
 }
 
-function LoreMarkdown({ text, resolve, onLink, onEditImage, allowExternal }) {
+// `srcMap` rewrites an inline image's src before it is rendered. Only the share
+// view passes one: a body stores its images as app-origin URLs on the
+// authenticated route (/api/worlds/<id>/…), which an anonymous reader can't
+// fetch, so they're re-pointed at the share prefix at RENDER time. Rewriting the
+// author's stored text instead would be a destructive edit of their markdown.
+function LoreMarkdown({ text, resolve, onLink, onEditImage, allowExternal, srcMap }) {
   const components = useMemo(() => ({
     fog: ({ children }) => <FogChip>{children}</FogChip>,
     wikilink: ({ node, children }) => {
@@ -404,9 +409,9 @@ function LoreMarkdown({ text, resolve, onLink, onEditImage, allowExternal }) {
     // editable. See InlineImage. (react-markdown's urlTransform already strips
     // javascript: URLs; InlineImage narrows further to same-origin for privacy.)
     img: ({ src, alt, title, node }) => (
-      <InlineImage src={src} alt={alt} title={title} node={node} onEdit={onEditImage} />
+      <InlineImage src={srcMap ? srcMap(src) : src} alt={alt} title={title} node={node} onEdit={onEditImage} />
     ),
-  }), [resolve, onLink, onEditImage, allowExternal]);
+  }), [resolve, onLink, onEditImage, allowExternal, srcMap]);
 
   return (
     <div className="lore-md">
@@ -651,11 +656,21 @@ function WikiTextarea({ value, onChange, names, style, rows, onUploadImage, allo
 // datepicker — this is fiction, so there's no month grid or locale logic. Degrades
 // to a read-only note when the world's pack has no calendar. The value it emits is
 // the structured { era, year, month, day } (1-based) the server validates, or null.
-function CalendarDateField({ calendar, value, onChange }) {
+function CalendarDateField({ calendar, value, onChange, off }) {
   if (!calendar) {
     return (
       <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>
         This world's pack has no calendar, so a date can't be set.
+      </div>
+    );
+  }
+  // The GM turned dates off for this world (World settings → Calendar). Existing
+  // values stay READABLE — turning the calendar off is a display choice, not a
+  // delete — but there's nothing to set a new one against, so the editor goes.
+  if (off) {
+    return (
+      <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>
+        {value ? `${formatDate(calendar, value)} — ` : ''}dates are turned off for this world.
       </div>
     );
   }
@@ -703,7 +718,19 @@ function CalendarDateField({ calendar, value, onChange }) {
   );
 }
 
-export default function WorldDetail({ user, worldId, onBack }) {
+export default function WorldDetail({ user, worldId, onBack, shareToken }) {
+  // `A` is the READ data source: the normal api when a logged-in user opened the
+  // world, or the share-link api when an anonymous reader did. Same method names
+  // either way, so every fetch below reads identically in both modes. It is
+  // memoized per token in api.js, so it is reference-stable and safe in deps.
+  //
+  // MUTATIONS deliberately keep calling `api` directly: a share reader's role is
+  // 'read', so every editing affordance is already hidden and every mutation
+  // route already refuses them server-side. Routing writes through `A` would only
+  // hide that fact behind a missing-method TypeError.
+  const A       = worldApi(shareToken);
+  const isShare = !!shareToken;
+
   const [world,      setWorld]      = useState(null);
   const [categories, setCategories] = useState([]);
   const [activeCat,  setActiveCat]  = useState(null);
@@ -721,6 +748,13 @@ export default function WorldDetail({ user, worldId, onBack }) {
   const [allSys,    setAllSys]    = useState([]);
   const [tier,      setTier]      = useState('lore');   // 'lore' | 'system'
   const [calendar,   setCalendar]   = useState(null);   // §4.11: pack calendar, or null
+  // The GM's "Show dates in this world" switch (World settings → Calendar). The
+  // SERVER deliberately still resolves a calendar when this is on — hiding must
+  // not make a save null out stored dates — so honouring it is the CLIENT's job:
+  // no World Calendar rail item, no Timeline/Calendar view toggle, and date
+  // fields become read-only. Dates already written stay READABLE, which is why
+  // `calendar` itself is kept: formatDate still needs the month names.
+  const [calHidden,  setCalHidden]  = useState(false);
   // List / Timeline / Calendar for the active category (Timeline: §4.11; Calendar
   // is the month-grid view). `calCursor` is the grid's currently-shown
   // { era, year, month } — null means "not navigated yet, use the default"
@@ -866,8 +900,9 @@ export default function WorldDetail({ user, worldId, onBack }) {
 
   // World-level assets (landing-page images + attachments). Loaded once per world.
   useEffect(() => {
+    if (isShare) return;   // owner-only route; a share reader never manages files
     api.getWorldAssets(worldId).then(r => setWorldAssets(Array.isArray(r?.assets) ? r.assets : [])).catch(() => {});
-  }, [worldId]);
+  }, [worldId, isShare]);
 
   // Phone drill-down: which single pane is showing. Lands on 'categories' (the
   // TOP of the stack) so the user always starts where the rail is, then drills in
@@ -893,10 +928,10 @@ export default function WorldDetail({ user, worldId, onBack }) {
     let alive = true;
     (async () => {
       const [w, cats, all, cal, sys, sysAll] = await Promise.all([
-        api.getWorld(worldId), api.getWorldCategories(worldId), api.getLore(worldId),
-        api.getWorldCalendar(worldId),   // §4.11: resolved pack calendar, or null
-        api.getWorldSystem(worldId),     // Wave C: the stamp + its reference types
-        api.getSysrefEntries(worldId),   // …and every system entry, for [[sys:…]]
+        A.getWorld(worldId), A.getWorldCategories(worldId), A.getLore(worldId),
+        A.getWorldCalendar(worldId),   // §4.11: resolved pack calendar, or null
+        A.getWorldSystem(worldId),     // Wave C: the stamp + its reference types
+        A.getSysrefEntries(worldId),   // …and every system entry, for [[sys:…]]
       ]);
       if (!alive) return;
       setSysTypes(sys && Array.isArray(sys.types) ? sys.types : []);
@@ -906,12 +941,13 @@ export default function WorldDetail({ user, worldId, onBack }) {
       setCategories(list);
       setAllEntries(Array.isArray(all) ? all : []);
       setCalendar(cal && !cal.error ? (cal.calendar || null) : null);
+      setCalHidden(!!(cal && cal.hidden));
       const firstVisible = list.find(c => !c.hidden);
       if (firstVisible) setActiveCat(firstVisible.id);
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [worldId]);
+  }, [worldId, A]);
 
   // Load the active category's entries (the middle-panel list).
   // The middle-panel list. `t` is the TIER, passed explicitly rather than read
@@ -920,34 +956,37 @@ export default function WorldDetail({ user, worldId, onBack }) {
   const loadEntries = useCallback(async (catId, t) => {
     if (!catId) return;
     const list = t === 'system'
-      ? await api.getSysrefEntries(worldId, catId)
-      : await api.getLore(worldId, catId);
+      ? await A.getSysrefEntries(worldId, catId)
+      : await A.getLore(worldId, catId);
     setEntries(Array.isArray(list) ? list : []);
-  }, [worldId]);
+  }, [worldId, A]);
 
   // Load EVERY entry in the world — the pool [[wiki]] links resolve against,
   // regardless of category. No stored link table; resolution is by name at
   // render time, so this just needs to stay fresh after any mutation.
   const loadAll = useCallback(async () => {
-    const list = await api.getLore(worldId);
+    const list = await A.getLore(worldId);
     setAllEntries(Array.isArray(list) ? list : []);
-  }, [worldId]);
+  }, [worldId, A]);
 
   // The system-reference pool, refreshed after any sysref mutation. Same
   // contract as loadAll: resolution is by NAME at render time, so this only has
   // to stay fresh — there is no stored link table on either tier.
   const loadAllSys = useCallback(async () => {
-    const list = await api.getSysrefEntries(worldId);
+    const list = await A.getSysrefEntries(worldId);
     setAllSys(Array.isArray(list) ? list : []);
-  }, [worldId]);
+  }, [worldId, A]);
 
   // Load the selected entry's assets (images + attachments). One store per
   // entry, so this refreshes whenever the selected entry changes.
   const loadAssets = useCallback(async (entryId) => {
-    if (!entryId) { setAssets([]); return; }
+    // Owner-only route (asset management chrome). A share reader still SEES
+    // inline images — those come through the member-readable download route
+    // embedded in the body — they just have nothing to manage.
+    if (!entryId || isShare) { setAssets([]); return; }
     const res = await api.getLoreAssets(worldId, entryId);
     setAssets(Array.isArray(res?.assets) ? res.assets : []);
-  }, [worldId]);
+  }, [worldId, isShare]);
 
   // §4.9: a propose member's own suggestions for an entry (server returns only theirs).
   const loadMyProposals = useCallback(async (entryId) => {
@@ -987,7 +1026,17 @@ export default function WorldDetail({ user, worldId, onBack }) {
   const dateFields = (catDef?.fields || []).filter(f => f.type === 'calendar-date');
   const startKey   = dateFields[0]?.key || null;
   const endKey     = dateFields.find(f => f.key !== startKey)?.key || null;
-  const canTimeline = !!(startKey && calendar);
+  const canTimeline = !!(startKey && calendar && !calHidden);
+
+  // Turning the calendar off while its pane is open would leave the reader on a
+  // view the rail no longer offers a way back to. Send it home instead.
+  useEffect(() => {
+    if (calHidden && calendarOpen) {
+      setCalendarOpen(false);
+      setShowHome(true);
+      if (isPhone) setPane('home');
+    }
+  }, [calHidden, calendarOpen, isPhone]);
 
   // Tier-derived capabilities. The SERVER is the gate — these only decide which
   // affordances to show; every action is re-checked server-side off req.worldRole.
@@ -1008,6 +1057,19 @@ export default function WorldDetail({ user, worldId, onBack }) {
   // owner out. Matches requireWorldOwner server-side.
   const isOwner   = role === 'owner';
   const canPropose = role === 'propose';
+
+  // Share mode only: re-point an inline image's stored app-origin URL at the
+  // share prefix (see LoreMarkdown's srcMap). Anything else — an off-origin URL,
+  // another world's — is returned untouched and handled by InlineImage's own
+  // same-origin guard.
+  // Matched by SHAPE rather than against a known world id: a share reader is
+  // handed a token, not an id, and every app-origin image inside this world's
+  // bodies belongs to this world by definition.
+  const mapSrc = useCallback((src) => {
+    if (!isShare || typeof src !== 'string') return src;
+    const m = /^(?:.*)?\/api\/worlds\/[a-z0-9-]+\/(.+)$/i.exec(src);
+    return m ? `${A.shareBase}/${m[1]}` : src;
+  }, [isShare, A]);
 
   // Name → entry index for wiki-link resolution (case-insensitive, trimmed).
   // First entry wins on a name collision (disambiguate later via [[Name|display]]).
@@ -1199,11 +1261,12 @@ export default function WorldDetail({ user, worldId, onBack }) {
   // empty rather than breaking the rail — a world with no campaigns is normal.
   useEffect(() => {
     let alive = true;
+    if (isShare) return undefined;   // campaigns carry join codes — never on a share link
     api.getWorldCampaigns(worldId)
       .then(res => { if (alive) setCampaigns(Array.isArray(res?.campaigns) ? res.campaigns : []); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [worldId]);
+  }, [worldId, isShare]);
 
   // Once the campaign list is in, prefetch each one's overview + session log so
   // search can reach into them. Each pair of calls is independent per campaign
@@ -1443,6 +1506,15 @@ export default function WorldDetail({ user, worldId, onBack }) {
     setActive(entry);
     setMode('read');
     if (isPhone) setPane('entry');
+    // Land at the TOP of the entry you just opened. Following a [[wiki]] link
+    // from deep inside a long body used to swap the reader's content while
+    // leaving the window scrolled where it was, so the new entry appeared to
+    // open somewhere in its middle — with its title off-screen above. This is
+    // the single funnel for every navigation (list rows, wiki links, pin
+    // clicks, search results all route through goToEntry), so one reset here
+    // covers them all. Instant, not smooth: a long animated scroll on every
+    // link is its own annoyance, and it would ignore prefers-reduced-motion.
+    if (typeof window !== 'undefined') window.scrollTo(0, 0);
   };
 
   // Opening from the list is just navigation within the current category.
@@ -1758,7 +1830,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
   );
 
   const renderResultRows = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', overflowY: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
       {searchResults.rows.length === 0 && (
         <div style={{ color: 'var(--text-dim)', fontSize: '0.85rem', padding: '1rem 0', textAlign: 'center' }}>
           No matches for “{search.trim()}”.
@@ -1913,7 +1985,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
           {/* World Calendar — only shown when the pack actually has a calendar
               (calendar-date fields degrade to a note without one, so there'd be
               nothing to plot). A peer of Home, not a lore category. */}
-          {calendar && (
+          {calendar && !calHidden && (
             <button type="button" onClick={selectCalendar} style={{
               display: 'flex', alignItems: 'center', gap: '0.6rem', width: '100%',
               textAlign: 'left', cursor: 'pointer', padding: '0.5rem 0.6rem',
@@ -2066,7 +2138,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
     };
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', overflowY: 'auto' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
         {dated.length === 0 && undated.length === 0 && (
           <div style={{ color: 'var(--text-dim)', fontSize: '0.85rem', padding: '1rem 0', textAlign: 'center' }}>No entries yet.</div>
         )}
@@ -2281,7 +2353,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
     const prose = (label, text) => !text ? null : (
       <div>
         <div style={{ ...eyebrow, marginBottom: '0.3rem' }}>{label}</div>
-        <LoreMarkdown text={text} resolve={resolveLink} onLink={goToEntry} allowExternal={allowExternal} />
+        <LoreMarkdown text={text} resolve={resolveLink} onLink={goToEntry} allowExternal={allowExternal} srcMap={mapSrc} />
       </div>
     );
     const scenes = Array.isArray(s.scenes) ? s.scenes : [];
@@ -2331,7 +2403,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
                           {SESSION_SCENE_FIELDS_UI.map(([k, label]) => sc[k] ? (
                             <div key={k}>
                               <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
-                              <LoreMarkdown text={sc[k]} resolve={resolveLink} onLink={goToEntry} allowExternal={allowExternal} />
+                              <LoreMarkdown text={sc[k]} resolve={resolveLink} onLink={goToEntry} allowExternal={allowExternal} srcMap={mapSrc} />
                             </div>
                           ) : null)}
                         </div>
@@ -2522,7 +2594,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
 
         <div>
           <label style={labelStyle}>In-world date — a separate axis from the date above, never inferred from it</label>
-          <CalendarDateField calendar={calendar} value={d.inWorldDate}
+          <CalendarDateField calendar={calendar} off={calHidden} value={d.inWorldDate}
             onChange={v => setSessionDraft(dr => ({ ...dr, inWorldDate: v }))} />
         </div>
 
@@ -2642,7 +2714,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
   };
 
   const renderList = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', height: '100%', minHeight: 0 }}>
       {/* Header: a results/category count on the left, view controls on the right.
           The search box lives in the rail (§4l), so a non-empty query renders
           global results here. §4.11: when the category has a calendar-date field
@@ -2684,9 +2756,9 @@ export default function WorldDetail({ user, worldId, onBack }) {
       {searching ? renderResultRows() : (
         // keep-fade replays on the list⇄timeline switch (§4m/§4.10 pattern,
         // gated by prefers-reduced-motion in index.css), keyed on the mode.
-        <div className="keep-fade" key={viewMode} style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="keep-fade" key={viewMode} style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {viewMode === 'timeline' && canTimeline ? renderTimeline() : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
           {filtered.length === 0 && (
             <div style={{ color: 'var(--text-dim)', fontSize: '0.85rem', padding: '1rem 0', textAlign: 'center' }}>
               No entries yet.
@@ -2776,7 +2848,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
                 allowExternalLink={allowExternal}
                 style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} />
             : f.type === 'calendar-date'
-            ? <CalendarDateField calendar={calendar} value={draft.fields[f.key] || null}
+            ? <CalendarDateField calendar={calendar} off={calHidden} value={draft.fields[f.key] || null}
                 onChange={val => setDraft(d => ({ ...d, fields: { ...d.fields, [f.key]: val } }))} />
             : <input value={draft.fields[f.key] || ''}
                 onChange={e => setDraft(d => ({ ...d, fields: { ...d.fields, [f.key]: e.target.value } }))}
@@ -2865,7 +2937,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
           )}
         </div>
         {body
-          ? <LoreMarkdown text={body} resolve={resolveLink} onLink={goToEntry} allowExternal={allowExternal} />
+          ? <LoreMarkdown text={body} resolve={resolveLink} onLink={goToEntry} allowExternal={allowExternal} srcMap={mapSrc} />
           : <div style={{ color: 'var(--text-dim)', fontSize: '0.9rem', lineHeight: 1.5 }}>
               {canEdit
                 ? <>No landing page yet. Click <strong>Edit</strong> to write one — Markdown, <code>||fog||</code>, <code>[[wiki links]]</code>, and uploaded images all work.</>
@@ -3002,7 +3074,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
       return (
         <div>
           <div style={eyebrow}>{label}</div>
-          <LoreMarkdown text={text} resolve={resolveLink} onLink={goToEntry} allowExternal={allowExternal} />
+          <LoreMarkdown text={text} resolve={resolveLink} onLink={goToEntry} allowExternal={allowExternal} srcMap={mapSrc} />
         </div>
       );
     };
@@ -3145,7 +3217,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
               return (
                 <div key={f.key}>
                   <div style={{ ...eyebrow, marginBottom: '0.3rem' }}>{f.label}</div>
-                  <LoreMarkdown text={active.fields[f.key]} resolve={resolveLink} onLink={goToEntry}
+                  <LoreMarkdown text={active.fields[f.key]} resolve={resolveLink} onLink={goToEntry} srcMap={mapSrc}
                     allowExternal={allowExternal}
                     onEditImage={canEdit ? ((pos, alt, src, dir) => applyImageDirective(f.key, pos, alt, src, dir)) : undefined} />
                 </div>
@@ -3335,7 +3407,10 @@ export default function WorldDetail({ user, worldId, onBack }) {
   // of state, so refreshing it here is enough to make all of them current.
   const refreshCalendar = () => {
     api.getWorldCalendar(worldId)
-      .then(cal => setCalendar(cal && !cal.error ? (cal.calendar || null) : null))
+      .then(cal => {
+        setCalendar(cal && !cal.error ? (cal.calendar || null) : null);
+        setCalHidden(!!(cal && cal.hidden));
+      })
       .catch(() => {});
   };
 
@@ -3429,7 +3504,9 @@ export default function WorldDetail({ user, worldId, onBack }) {
   // Close button (§4.10): an X at the top LEFT that navigates back to the worlds
   // list (onBack = navigate('/worlds'), so the browser back button still works).
   // Replaces the old "← Worlds" button that sat at the top right.
-  const closeButton = (
+  // In share mode there is nowhere to go back TO (the reader has no worlds list),
+  // so the button is simply absent rather than dead.
+  const closeButton = !onBack ? null : (
     <button className="btn-ghost" onClick={onBack} aria-label="Close world" title="Close world"
       style={{
         padding: 0, width: 36, height: 36, fontSize: '1.05rem', lineHeight: 1,
@@ -3452,7 +3529,7 @@ export default function WorldDetail({ user, worldId, onBack }) {
   const topBar = (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
       {closeButton}
-      <div style={eyebrow}>Keep</div>
+      <div style={eyebrow}>Keep{isShare ? ' — Shared (View Only)' : ''}</div>
     </div>
   );
 
@@ -3532,8 +3609,24 @@ export default function WorldDetail({ user, worldId, onBack }) {
       <div style={{ display: 'grid', gridTemplateColumns: desktopCols, gap: '1rem', alignItems: 'start' }}>
         <div className={panelClass} style={panelBox}>{renderRail()}</div>
         {showMiddle && (
-          <div className={panelClass} style={{ ...panelBox, maxHeight: 'calc(100vh - 120px)' }}>
-            <div className="keep-fade" key={listKey} style={{ height: '100%' }}>{renderList()}</div>
+          // The list panel is the one panel that CLAMPS. `maxHeight` alone did
+          // nothing: overflow stayed visible and every descendant height was
+          // auto, so a long category's rows simply grew straight through the
+          // panel's bottom border. A max-height only bites when the box clips
+          // AND the inner scroller has a definite height to scroll within — so
+          // this is a flex column with `overflow: hidden`, and every wrapper down
+          // to the scrolling row list carries `flex: 1 1 auto; min-height: 0`
+          // (min-height:0 is required — a flex item's default `min-height: auto`
+          // refuses to shrink below its content, which is what silently defeats
+          // an inner `overflow-y: auto`).
+          <div className={panelClass} style={{
+            ...panelBox, maxHeight: 'calc(100vh - 120px)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0,
+          }}>
+            <div className="keep-fade" key={listKey}
+              style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              {renderList()}
+            </div>
           </div>
         )}
         <div className={panelClass} style={panelBox}>

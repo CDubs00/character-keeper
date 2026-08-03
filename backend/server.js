@@ -647,6 +647,16 @@ function worldRoleFor(world, username) {
 // campaign style). Stashes req.world + req.worldRole. Place AFTER validId. Used by
 // CONTENT-READ routes only — every management/mutation route keeps requireWorldOwner.
 function requireWorldRead(req, res, next) {
+  // Share-link readers are pinned to the LOWEST tier, 'read'. Everything
+  // downstream — canSee filtering, fog stripping, asset gating — is then the
+  // same code path a `read` member takes, so a share link can never see more
+  // than the most restricted logged-in player. There is deliberately no way to
+  // issue a propose/write share link (see the share-create route).
+  if (req.isWorldShare) {
+    req.world     = req.shareWorld;
+    req.worldRole = 'read';
+    return next();
+  }
   const world = getWorlds().find(w => w.id === req.params.id);
   const role  = world ? worldRoleFor(world, req.session.user.username) : null;
   if (!world || !role) return res.status(404).json({ error: 'Not found' });
@@ -673,8 +683,13 @@ function requireWorldWrite(req, res, next) {
 // The world record a NON-OWNER member may receive: strip the `members` ledger
 // (other players' access is not their business) and tag the viewer's role. The
 // owner always gets the full record (with its own role tag) elsewhere.
+//
+// `shares` is stripped for the same reason shareSafeChar strips a character's:
+// the token list is the credential itself. Handing it to a member — or, worse,
+// to a share-link reader, who receives this same view — would let anyone with
+// read access mint a permanent link out of the payload.
 function memberWorldView(world, role) {
-  const { members, ...safe } = world;
+  const { members, shares, ...safe } = world;
   return { ...safe, role };
 }
 
@@ -1023,6 +1038,12 @@ function removeWorldAssets(worldId) {
 }
 
 function requireAuth(req, res, next) {
+  // A world share link (see the world-share gate) is deliberately
+  // UNAUTHENTICATED — the token IS the credential, exactly as a character share
+  // link is. The gate has already resolved the token, checked its expiry,
+  // rejected every non-GET method and matched the path against a read-only
+  // allowlist, so by here the request is provably a read of one world's content.
+  if (req.isWorldShare) return next();
   if (!req.session?.user) return res.status(401).json({ error: 'Not authenticated' });
   // Absolute-lifetime ceiling: force re-login past the hard cap even on an active
   // (sliding) session. Older sessions with no stamp are treated as expired.
@@ -3385,6 +3406,136 @@ app.post('/api/campaigns/:id/status', requireAuth, requireGM, validId, (req, res
 // The client body never sets app-owned fields (id, worldId, categoryId,
 // createdBy, ownedBy, timestamps) — those are read from disk / server-generated.
 // ===========================================================================
+
+// ---------------------------------------------------------------------------
+// World share links — READ-ONLY, unauthenticated
+//
+// Same shape and same security guidelines as a character share link: an
+// unguessable 32-byte token, an expiry, revocable by the owner, and the payload
+// stripped of anything that would let the holder escalate.
+//
+// ONE difference, and it is deliberate: there is NO 'edit' permission. A
+// character share link can be editable because it grants one person write access
+// to their own sheet; a world holds every other player's secrets, so an external
+// link is read-only, full stop. The create route takes no permission argument —
+// the absence of the parameter is the enforcement, so no future body key can
+// quietly turn one on.
+//
+// HOW IT WORKS: rather than a parallel set of handlers (which would drift from
+// the real ones and re-implement canSee/fog stripping — the exact duplication
+// §4.8 avoided), the gate below REWRITES the URL onto the ordinary world routes
+// and marks the request. `requireAuth` then passes it through and
+// `requireWorldRead` pins it to the 'read' tier, so the response is byte-for-byte
+// what the most restricted logged-in member would get: hidden/over-tier entries
+// absent, ||fog|| stripped, assets gated on their owning entry.
+//
+// FOUR gates, all before the rewrite:
+//   1. GET only — no method can mutate through this prefix.
+//   2. The path must match the READ allowlist below. This is why it's an
+//      allowlist and not "any GET": /campaigns and /lore/:id/proposals are also
+//      requireWorldRead routes, and a campaign row carries its join code.
+//   3. The token must resolve to a world.
+//   4. The link must not have expired.
+// ---------------------------------------------------------------------------
+
+// The only paths a share link may read. Anything not listed 404s — including
+// routes a `read` MEMBER can reach (campaigns, proposals), because a member is a
+// known person in the ledger and a link holder is anonymous.
+const WORLD_SHARE_PATHS = [
+  /^$/,                                                        // the world record
+  /^\/categories$/,
+  /^\/calendar$/,
+  /^\/system$/,
+  /^\/lore$/,
+  /^\/lore\/[a-z0-9-]{1,80}$/i,
+  /^\/lore\/[a-z0-9-]{1,80}\/assets\/[A-Za-z0-9]{1,40}$/,      // inline images
+  /^\/assets\/[A-Za-z0-9]{1,40}$/,                             // landing images
+  /^\/sysref$/,
+  /^\/sysref\/[a-z0-9-]{1,80}$/i,
+];
+
+function findWorldByToken(token) {
+  for (const w of getWorlds()) {
+    const share = (w.shares || []).find(s => s && s.token === token);
+    if (share) return { world: w, share };
+  }
+  return null;
+}
+
+app.use((req, res, next) => {
+  const qIdx     = req.url.indexOf('?');
+  const pathOnly = qIdx === -1 ? req.url : req.url.slice(0, qIdx);
+  const qs       = qIdx === -1 ? '' : req.url.slice(qIdx);
+  const m = /^\/api\/share\/world\/([A-Za-z0-9_-]{16,128})(\/.*)?$/.exec(pathOnly);
+  if (!m) return next();
+
+  if (req.method !== 'GET') return res.status(403).json({ error: 'This link is read-only' });
+
+  const rest = (m[2] || '').replace(/\/+$/, '');
+  if (!WORLD_SHARE_PATHS.some(re => re.test(rest))) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  const found = findWorldByToken(m[1]);
+  if (!found) return res.status(404).json({ error: 'Link not found' });
+  if (new Date() > new Date(found.share.expiresAt)) {
+    return res.status(410).json({ error: 'Link expired' });
+  }
+
+  // Log the OPENING of a world, not every fetch behind it — one page view pulls
+  // categories, lore, the calendar and every image, and a log of that is noise.
+  if (rest === '') {
+    appendLog('shareAccesses', {
+      sharedBy:  found.world.ownedBy,
+      character: `World: ${found.world.name || found.world.id}`,
+      at:        new Date().toISOString(),
+      ip:        normalizeIp(req.ip),
+    });
+  }
+
+  req.isWorldShare = true;
+  req.shareWorld   = found.world;
+  // Internal rewrite onto the real route. `found.world.id` came out of our own
+  // storage and already passes safeId, so it can't inject a path segment.
+  req.url = `/api/worlds/${found.world.id}${rest}${qs}`;
+  next();
+});
+
+// Owner-only management of a world's share links. `shares` is APP-OWNED: written
+// only here, never through the generic world PUT.
+app.get('/api/worlds/:id/shares', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const now = new Date();
+  res.json((req.world.shares || []).filter(s => new Date(s.expiresAt) > now));
+});
+
+app.post('/api/worlds/:id/shares', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  // Note the absence of a `permission` read: a world link is read-only by
+  // construction, not by validating a value the client sent.
+  const days = Math.min(Math.max(parseInt(req.body?.expiresInDays, 10) || 3, 1), 90);
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + days);
+
+  const share = {
+    token:      generateToken(32),
+    permission: 'view',
+    expiresAt:  expiresAt.toISOString(),
+    createdAt:  new Date().toISOString(),
+  };
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  if (!Array.isArray(world.shares)) world.shares = [];
+  world.shares.push(share);
+  saveWorlds(worlds);
+  res.json(share);
+});
+
+app.delete('/api/worlds/:id/shares/:token', requireAuth, requireGM, validId, requireWorldOwner, (req, res) => {
+  const worlds = getWorlds();
+  const world  = worlds.find(w => w.id === req.params.id);
+  world.shares = (world.shares || []).filter(s => s.token !== req.params.token);
+  saveWorlds(worlds);
+  res.json({ ok: true });
+});
 
 // GET /api/worlds — every world the requester can see, each tagged with the
 // viewer's `role`: worlds they OWN (role 'owner', full record) plus, since §4.8,
