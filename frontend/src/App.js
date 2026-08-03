@@ -32,6 +32,15 @@ function WorldDetailRoute({ user }) {
   return <WorldDetail user={user} worldId={id} onBack={() => navigate('/worlds')} />;
 }
 
+// An external, read-only world share link. Same component as the logged-in
+// world view — it just draws its data from the share prefix instead (see
+// worldApi in api.js). There is no `user`, and the server pins the viewer to the
+// 'read' tier, so every editing and management affordance is already absent.
+function WorldShareRoute() {
+  const { token } = useParams();
+  return <WorldDetail worldId={null} shareToken={token} />;
+}
+
 function AppRoutes({ user, setUser, needsSetup, setNeedsSetup }) {
   const navigate = useNavigate();
 
@@ -92,6 +101,7 @@ function AppRoutes({ user, setUser, needsSetup, setNeedsSetup }) {
         </RequireAuth>
       } />
       <Route path="/share/:token" element={<ShareView />} />
+      <Route path="/world-share/:token" element={<WorldShareRoute />} />
       <Route path="*" element={
         <Navigate to={needsSetup ? '/setup' : (user ? '/characters' : '/login')} replace />
       } />

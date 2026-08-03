@@ -67,6 +67,7 @@ const SECTIONS = [
   { id: 'campaigns',  label: 'Campaigns' },
   { id: 'categories', label: 'Categories' },
   { id: 'calendar',   label: 'Calendar' },
+  { id: 'share',      label: 'Share link' },
   { id: 'proposals',  label: 'Proposals' },
   { id: 'links',      label: 'Links & conversion' },
 ];
@@ -895,7 +896,120 @@ export default function WorldSettingsModal({ worldId, initialSection = 'general'
     <WorldCalendarEditor worldId={worldId} canManage={canManage} onSaved={onSaved} />
   ) : null;
 
-  const bodyFor = { general: generalBody, access: accessBody, campaigns: campaignsBody, categories: categoriesBody, calendar: calendarBody, proposals: proposalsBody, links: linksBody };
+  // ---- Share link (external, read-only) -------------------------------------
+  // The same security model as a character share link — an unguessable token, an
+  // expiry, revocable here — with one deliberate difference: there is no "edit"
+  // option. A character link can be editable because it grants one person access
+  // to their own sheet; a world holds every other player's secrets, so an
+  // external link is read-only, full stop. The server takes no permission
+  // argument at all, so this isn't a UI choice that a crafted request could undo.
+  const [shares,     setShares]     = useState([]);
+  const [shareDays,  setShareDays]  = useState(7);
+  const [newLink,    setNewLink]    = useState('');
+  const [copied,     setCopied]     = useState(false);
+  const [shareBusy,  setShareBusy]  = useState(false);
+
+  useEffect(() => {
+    if (section !== 'share') return;
+    api.getWorldShares(worldId)
+      .then(list => setShares(Array.isArray(list) ? list : []))
+      .catch(() => setShares([]));
+  }, [section, worldId]);
+
+  const createShare = async () => {
+    setShareBusy(true);
+    try {
+      const share = await api.createWorldShare(worldId, shareDays);
+      if (share && share.token) {
+        setShares(prev => [...prev, share]);
+        setNewLink(`${window.location.origin}/world-share/${share.token}`);
+        setCopied(false);
+      }
+    } catch { /* leave the list as it was */ }
+    setShareBusy(false);
+  };
+
+  const revokeShare = async (token) => {
+    try { await api.revokeWorldShare(worldId, token); } catch { return; }
+    setShares(prev => prev.filter(s => s.token !== token));
+    setNewLink(prev => (prev.endsWith(token) ? '' : prev));
+  };
+
+  const shareBody = section === 'share' && (
+    <div>
+      <div style={{ fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.5, marginBottom: '1rem' }}>
+        A share link lets someone read this world without an account. They see exactly
+        what your most restricted player sees: shared entries only — hidden entries and
+        every <code>||GM-only||</code> passage are stripped by the server before the page
+        is built. Campaigns, join codes, members and the settings panel are never reachable.
+        Links are <strong>read-only</strong>; there is no editable version.
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '1rem' }}>
+        <div>
+          <label style={labelStyle}>Expires in</label>
+          <select value={shareDays} onChange={e => setShareDays(Number(e.target.value))}
+            style={{ ...inputStyle, width: 'auto' }}>
+            {[1, 3, 7, 30, 90].map(d => <option key={d} value={d}>{d} {d === 1 ? 'day' : 'days'}</option>)}
+          </select>
+        </div>
+        <button className="btn-primary" disabled={shareBusy} onClick={createShare}>
+          {shareBusy ? 'Creating…' : 'Create link'}
+        </button>
+      </div>
+
+      {newLink && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 2, padding: '0.6rem 0.75rem', marginBottom: '1rem' }}>
+          <div style={eyebrow}>New link</div>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: 6 }}>
+            <input readOnly value={newLink} style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+              onFocus={e => e.target.select()} />
+            <button className="btn-ghost" onClick={() => {
+              navigator.clipboard.writeText(newLink);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}>{copied ? 'Copied' : 'Copy'}</button>
+          </div>
+        </div>
+      )}
+
+      <div style={eyebrow}>Active links · {shares.length}</div>
+      {shares.length === 0 ? (
+        <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 6 }}>
+          No active links. Anyone outside this world can't reach it.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: 6 }}>
+          {shares.map(sh => (
+            <div key={sh.token} style={{
+              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              border: '1px solid var(--border)', borderRadius: 2, padding: '0.4rem 0.6rem',
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-primary)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  /world-share/{sh.token}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>
+                  Read-only · expires {new Date(sh.expiresAt).toLocaleDateString()}
+                </div>
+              </div>
+              <button className="btn-ghost" style={{ fontSize: 12 }}
+                onClick={() => navigator.clipboard.writeText(`${window.location.origin}/world-share/${sh.token}`)}>
+                Copy
+              </button>
+              <button className="btn-ghost" style={{ fontSize: 12, color: 'var(--danger)' }}
+                onClick={() => revokeShare(sh.token)}>
+                Revoke
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const bodyFor = { general: generalBody, access: accessBody, campaigns: campaignsBody, categories: categoriesBody, calendar: calendarBody, share: shareBody, proposals: proposalsBody, links: linksBody };
   const activeSection = SECTIONS.find(s => s.id === section) || SECTIONS[0];
   const headerCount =
     section === 'access' && members.length ? ` · ${members.length}`

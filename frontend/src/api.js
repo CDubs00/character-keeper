@@ -507,6 +507,24 @@ export const api = {
     return `${BASE}/api/worlds/${worldId}/assets/${key}`;
   },
 
+  // --- Keep: world share links (read-only, owner-managed) -----------------
+  // Mirrors the character share wrappers, minus the permission argument: a world
+  // link is read-only by construction (see the server route), so there is no
+  // value to pass and no way for a caller to ask for more.
+  async getWorldShares(worldId) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/shares`));
+  },
+  async createWorldShare(worldId, expiresInDays) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/shares`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresInDays }),
+    }));
+  },
+  async revokeWorldShare(worldId, token) {
+    return handle(await fetchWithRetry(`${BASE}/api/worlds/${worldId}/shares/${token}`, { method: 'DELETE' }));
+  },
+
   async getUsers() {
     return handle(await fetchWithRetry(`${BASE}/api/users`));
   },
@@ -607,6 +625,58 @@ export const api = {
     }));
   },
 };
+
+// ---------------------------------------------------------------------------
+// worldApi(shareToken) — the READ surface the world view uses, pointed at either
+// the normal authenticated world routes or the unauthenticated share prefix.
+//
+// The world view is one component whether you reach it logged in or through a
+// share link — duplicating ~3 500 lines of reader, drill-down, timeline and
+// wiki-link resolution to serve anonymous readers is exactly the drift Wave C
+// refused. So the DATA SOURCE is swapped instead of the view.
+//
+// Method names and argument lists match `api` exactly (the worldId argument is
+// ignored — the token already identifies the world), so call sites read the same
+// in both modes. Only READ methods exist here: a share-mode call to anything
+// else is a bug, and an absent method throws instead of quietly writing.
+//
+// Memoized per token so the returned object is reference-stable across renders
+// and can sit in a hook dependency array without re-running every effect.
+// ---------------------------------------------------------------------------
+const worldShareApis = new Map();
+
+export function worldApi(shareToken) {
+  if (!shareToken) return api;
+  if (worldShareApis.has(shareToken)) return worldShareApis.get(shareToken);
+  const B = `${BASE}/api/share/world/${encodeURIComponent(shareToken)}`;
+  const impl = {
+    getWorld:           async () => handle(await fetchWithRetry(B)),
+    getWorldCategories: async () => handle(await fetchWithRetry(`${B}/categories`)),
+    getWorldCalendar:   async () => handle(await fetchWithRetry(`${B}/calendar`)),
+    getWorldSystem:     async () => handle(await fetchWithRetry(`${B}/system`)),
+    async getLore(_worldId, category) {
+      const q = category ? `?category=${encodeURIComponent(category)}` : '';
+      return handle(await fetchWithRetry(`${B}/lore${q}`));
+    },
+    async getLoreEntry(_worldId, entryId) {
+      return handle(await fetchWithRetry(`${B}/lore/${entryId}`));
+    },
+    async getSysrefEntries(_worldId, typeId) {
+      const q = typeId ? `?type=${encodeURIComponent(typeId)}` : '';
+      return handle(await fetchWithRetry(`${B}/sysref${q}`));
+    },
+    async getSysrefEntry(_worldId, entryId) {
+      return handle(await fetchWithRetry(`${B}/sysref/${entryId}`));
+    },
+    loreAssetUrl: (_worldId, entryId, key) => `${B}/lore/${entryId}/assets/${key}`,
+    worldAssetUrl: (_worldId, key) => `${B}/assets/${key}`,
+    // The share base, so a body's stored app-origin image URLs (written as
+    // /api/worlds/<id>/…) can be re-pointed at the share prefix at render time.
+    shareBase: B,
+  };
+  worldShareApis.set(shareToken, impl);
+  return impl;
+}
 
 export const slugify = (name) =>
   (name || 'character')
