@@ -1,4 +1,8 @@
-FROM node:20-alpine
+# Node 24 (LTS). Node 20 went end-of-life April 2026 and so never received the
+# Oct 2026 CA-store fix that distrusts the compromised eMudhra intermediates —
+# relevant here because `npm ci` below fetches from the registry over TLS.
+# Rebuild with `docker build --pull` so a cached old base isn't reused.
+FROM node:24-alpine
 WORKDIR /app
 
 # Backend deps from the lock file (now in sync, so this is reproducible)
